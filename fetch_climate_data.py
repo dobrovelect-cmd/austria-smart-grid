@@ -23,11 +23,11 @@ for idx, item in enumerate(powerstations):
         lon = float(str(item.get('longitude', '0')).replace(',', '.'))
         if lat == 0 or lon == 0: continue
         
-        # Расширенный поиск контактов и сайтов (если API изменил ключи)
+        # Erweiterte Suche nach Kontakten und Websites (für den Fall, dass die API ihre Schlüssel geändert hat)
         contact = item.get('contact', item.get('contactEmail', item.get('email', 'N/A')))
         website = item.get('website', item.get('url', item.get('operatorUrl', 'N/A')))
         
-        # Запрос климатических данных
+        # Anfrage für Klimadaten
         weather_url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date=2024-01-01&end_date=2024-12-31&hourly=windspeed_100m,shortwave_radiation&timezone=Europe%2FBerlin"
         w_res = requests.get(weather_url, timeout=10).json()
         

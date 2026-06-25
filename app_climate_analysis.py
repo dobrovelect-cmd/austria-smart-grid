@@ -78,24 +78,24 @@ f_df = df[
 def calculate_intelligent_mix(row):
     S = row['Frei_MVA']
     
-    # Если анализ выключен -> показываем базовые данные сети
+    # Wenn die Analyse deaktiviert ist -> grundlegende Netzwerkdaten anzeigen.
     if not use_climate_analysis:
         return row['Farbe_Netz'], "Basis-Netzmodus", 0.0, 0.0, 0.0, 0, 0
     
     # ==========================================
-    # 1. РЕАЛИСТИЧНЫЙ РАСЧЕТ ЧАСОВ (VBS)
+    # 1. Realistische Stundenberechnung (VBS)
     # ==========================================
     
-    # Ветер: старт от 4 м/с, шаг 500ч, жесткий потолок 3200ч
+    # Wind: Start bei 4 m/s, Schrittweite 500 h, feste Obergrenze bei 3200 h.
     if row['Wind_ms'] < 4.0:
         vbs_wind = 0.0
     else:
         vbs_wind = min(3200.0, 1000.0 + (row['Wind_ms'] - 4.0) * 500.0)
         
-    # Солнце: Performance Ratio 0.85
+    # Sonne: Performance Ratio 0.85
     vbs_solar = row['Solar_kWh'] * 0.85
     
-    # Проверка на соответствие фильтрам пользователя
+    # Auf Einhaltung der Benutzerfilter prüfen
     wind_ok = row['Wind_ms'] >= target_wind and vbs_wind > 0
     solar_ok = row['Solar_kWh'] >= target_solar
     
@@ -103,27 +103,27 @@ def calculate_intelligent_mix(row):
         return [189, 195, 199, 100], "Geringes Potenzial", 0.0, 0.0, 0.0, int(vbs_wind), int(vbs_solar)
         
     # ==========================================
-    # 2. ВЕСА И РАСПРЕДЕЛЕНИЕ МОЩНОСТИ
+    # 2. Gewichte und Leistungsverteilung
     # ==========================================
     total_vbs = (vbs_wind if wind_ok else 0) + (vbs_solar if solar_ok else 0)
     w_wind = (vbs_wind / total_vbs) if wind_ok else 0.0
     w_solar = (vbs_solar / total_vbs) if solar_ok else 0.0
     
-    # Определение доли накопителя (BESS)
+    # Bestimmung des Anteils des Speichergeräts(BESS)
     if wind_ok and solar_ok:
-        speicher_anteil = 0.20 # Гибрид: ветер и солнце сглаживают друг друга
+        speicher_anteil = 0.20 # Hybrid: Wind und Sonne gleichen sich gegenseitig aus.
         strategie_name = "Optimiertes Hybridkraftwerk + Speicher"
         farbe = [155, 89, 182, 210] 
     elif wind_ok:
-        speicher_anteil = 0.25 # Только ветер
+        speicher_anteil = 0.25 # Nur Wind
         strategie_name = "Windpark + Speicher"
         farbe = [41, 128, 185, 210] 
     else:
-        speicher_anteil = 0.35 # Только солнце (ночью не работает)
+        speicher_anteil = 0.35 # Nur die Sonne (funktioniert nachts nicht)
         strategie_name = "PV-Großanlage + Speicher"
         farbe = [241, 196, 15, 210] 
         
-    # Распределение свободных MVA
+    # Zuweisung nicht zugewiesener Ressourcen MVA
     leistung_speicher = round(S * speicher_anteil, 1)
     leistung_generation_gesamt = S - leistung_speicher
     
