@@ -53,7 +53,7 @@ with st.sidebar.expander("🌤️ KI-Analyse: Dynamische EE-Aufteilung", expande
     use_climate_analysis = st.checkbox("Wirtschaftliche Aufteilung aktivieren", value=True)
     
     st.markdown("**Mindestanforderungen für Rentabilität:**")
-    # Оптимизированы дефолтные значения (4.0 вместо 4.8 и 950 вместо 1050), чтобы проекты сразу отображались
+    # (4.0 anstatt 4.8 и 950 - anstatt 1050)
     target_wind = st.slider("Min. Windgeschwindigkeit (m/s)", 3.5, 8.5, 4.0, 0.1)
     target_solar = st.slider("Min. Sonneneinstrahlung (kWh/m²)", 950, 1350, 950, 25)
 
