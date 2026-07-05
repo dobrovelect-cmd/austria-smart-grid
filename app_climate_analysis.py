@@ -49,13 +49,13 @@ range_mva = st.sidebar.slider("Verfügbare Netzkapazität (MVA)", min_v, max_v, 
 # 🌤️ BLOCK 2: INTELLIGENTE ZUSATZFUNKTION (Vollbenutzungsstunden)
 # =====================================================================
 st.sidebar.markdown("---")
-with st.sidebar.expander("🌤️ KI-Analyse: Dynamische EE-Aufteilung", expanded=False):
-    use_climate_analysis = st.checkbox("Wirtschaftliche Aufteilung aktivieren")
+with st.sidebar.expander("🌤️ KI-Analyse: Dynamische EE-Aufteilung", expanded=True):
+    use_climate_analysis = st.checkbox("Wirtschaftliche Aufteilung aktivieren", value=True)
     
-    if use_climate_analysis:
-        st.markdown("**Mindestanforderungen für Rentabilität:**")
-        target_wind = st.slider("Min. Windgeschwindigkeit (m/s)", 3.5, 8.5, 4.8, 0.1)
-        target_solar = st.slider("Min. Sonneneinstrahlung (kWh/m²)", 950, 1350, 1050, 25)
+    st.markdown("**Mindestanforderungen für Rentabilität:**")
+    # Оптимизированы дефолтные значения (4.0 вместо 4.8 и 950 вместо 1050), чтобы проекты сразу отображались
+    target_wind = st.slider("Min. Windgeschwindigkeit (m/s)", 3.5, 8.5, 4.0, 0.1)
+    target_solar = st.slider("Min. Sonneneinstrahlung (kWh/m²)", 950, 1350, 950, 25)
 
 # =====================================================================
 # 📐 BLOCK 3: 3D-SKALIERUNG
@@ -67,7 +67,7 @@ col_elevation = st.sidebar.slider("Höhenskalierung", 50, 800, 300, 50)
 
 
 # =====================================================================
-# 🧮 MATHEMATISCHER KERN: VOLLBENUTZUNGSSTUNDEN & SYNERGIE
+# 🧮 MATHEMATISCHER KERN: PEAK-SHAVING & SPEICHER-OPTIMIERUNG
 # =====================================================================
 f_df = df[
     (df["Bundesland"].isin(selected_states)) &
@@ -78,57 +78,51 @@ f_df = df[
 def calculate_intelligent_mix(row):
     S = row['Frei_MVA']
     
-    # Wenn die Analyse deaktiviert ist -> grundlegende Netzwerkdaten anzeigen.
     if not use_climate_analysis:
         return row['Farbe_Netz'], "Basis-Netzmodus", 0.0, 0.0, 0.0, 0, 0
     
-    # ==========================================
-    # 1. Realistische Stundenberechnung (VBS)
-    # ==========================================
-    
-    # Wind: Start bei 4 m/s, Schrittweite 500 h, feste Obergrenze bei 3200 h.
+    # 1. Stundenberechnung (VBS)
     if row['Wind_ms'] < 4.0:
         vbs_wind = 0.0
     else:
         vbs_wind = min(3200.0, 1000.0 + (row['Wind_ms'] - 4.0) * 500.0)
         
-    # Sonne: Performance Ratio 0.85
     vbs_solar = row['Solar_kWh'] * 0.85
     
-    # Auf Einhaltung der Benutzerfilter prüfen
     wind_ok = row['Wind_ms'] >= target_wind and vbs_wind > 0
     solar_ok = row['Solar_kWh'] >= target_solar
     
     if not wind_ok and not solar_ok:
         return [189, 195, 199, 100], "Geringes Potenzial", 0.0, 0.0, 0.0, int(vbs_wind), int(vbs_solar)
         
-    # ==========================================
-    # 2. Gewichte und Leistungsverteilung
-    # ==========================================
+    # 2. Gewichte bestimmen
     total_vbs = (vbs_wind if wind_ok else 0) + (vbs_solar if solar_ok else 0)
     w_wind = (vbs_wind / total_vbs) if wind_ok else 0.0
     w_solar = (vbs_solar / total_vbs) if solar_ok else 0.0
     
-    # Bestimmung des Anteils des Speichergeräts(BESS)
+    # Bestimmung des Speicher-Faktors für Peak-Shaving
     if wind_ok and solar_ok:
-        speicher_anteil = 0.20 # Hybrid: Wind und Sonne gleichen sich gegenseitig aus.
-        strategie_name = "Optimiertes Hybridkraftwerk + Speicher"
-        farbe = [155, 89, 182, 210] 
+        speicher_anteil = 0.20 
+        strategie_name = "Optimiertes Hybridkraftwerk + BESS"
+        farbe = [155, 89, 182, 210] # Lila
     elif wind_ok:
-        speicher_anteil = 0.25 # Nur Wind
-        strategie_name = "Windpark + Speicher"
-        farbe = [41, 128, 185, 210] 
+        speicher_anteil = 0.25 
+        strategie_name = "Windpark + BESS (Lastverschiebung)"
+        farbe = [41, 128, 185, 210] # Blau
     else:
-        speicher_anteil = 0.35 # Nur die Sonne (funktioniert nachts nicht)
-        strategie_name = "PV-Großanlage + Speicher"
-        farbe = [241, 196, 15, 210] 
+        speicher_anteil = 0.35 # Höherer Speicherbedarf für die Mittagssonne
+        strategie_name = "PV-Anlage + BESS (Peak-Shaving)"
+        farbe = [241, 196, 15, 210] # Gelb
         
-    # Zuweisung nicht zugewiesener Ressourcen MVA
+    # --- NEUE PEAK-SHAVING LOGIK (Anforderung Professor) ---
+    # Die Netzkapazität S wird als Basis-Einspeisung voll ausgenutzt.
+    # Der Speicher (BESS) erlaubt eine Überdimensionierung der Anlagen, 
+    # da er Erzeugungsspitzen (z.B. PV-Mittagsspitze) abfedert und verzögert einspeist.
     leistung_speicher = round(S * speicher_anteil, 1)
-    leistung_generation_gesamt = S - leistung_speicher
     
-    leistung_wea = round(leistung_generation_gesamt * w_wind, 1)
-    leistung_pv = round(leistung_generation_gesamt * w_solar, 1)
+    # Überbelegung des Netzanschlusses dank intelligenter Batterie-Pufferung
+    leistung_wea = round(S * w_wind * (1 + speicher_anteil), 1)
+    leistung_pv = round(S * w_solar * (1 + speicher_anteil), 1)
     
     return farbe, strategie_name, leistung_wea, leistung_pv, leistung_speicher, int(vbs_wind), int(vbs_solar)
 
@@ -154,42 +148,41 @@ if not use_climate_analysis:
     col3.metric("Durchschn. freie Kapazität", f"{round(f_df['Frei_MVA'].mean(), 1)} MVA" if not f_df.empty else "0 MVA")
 else:
     counts = f_df['Strategie'].value_counts()
-    col1.metric("Wind+Speicher Projekte", counts.get("Wind park + Speicher", 0) + counts.get("Windpark + Speicher", 0))
-    col2.metric("PV+Speicher Projekte", counts.get("PV-Großanlage + Speicher", 0))
-    col3.metric("Optimierte Hybrid-Cluster", counts.get("Optimiertes Hybridkraftwerk + Speicher", 0))
+    col1.metric("Wind+BESS Cluster", counts.get("Windpark + BESS (Lastverschiebung)", 0))
+    col2.metric("PV+BESS Peak-Shaving", counts.get("PV-Anlage + BESS (Peak-Shaving)", 0))
+    col3.metric("Optimierte Hybrid-Systeme", counts.get("Optimiertes Hybridkraftwerk + BESS", 0))
 
 # =====================================================================
-# 🎯 DYNAMISCHE STRUKTURIERUNG DES TOOLTIPS (KONTAKTE IMMER SICHTBAR)
+# 🎯 DYNAMISCHE STRUKTURIERUNG DES TOOLTIPS (Wording angepasst)
 # =====================================================================
 if not use_climate_analysis:
-    # REINER BASIS-NETZMODUS (Technische Daten + Kontakte)
     tooltip_html = """
         <div style='font-family: sans-serif; padding: 12px; line-height: 1.6; min-width: 250px;'>
             <b style='font-size:16px; color: #2c3e50;'>{Name}</b><br/>
             <hr style='margin:6px 0; border: 0; border-top: 1px solid #ccc;'/>
             <b>Verfügbare Netzkapazität:</b> <span style='font-size: 15px; color: #27ae60; font-weight: bold;'>{Frei_MVA} MVA</span><br/>
-            <b>Reservierte Leistung:</b> {Belegt_MVA} MVA<br/>
+            <b>Belegte / Reservierte Leistung:</b> {Belegt_MVA} MVA<br/>
             <hr style='margin:6px 0; border: 0; border-top: 1px solid #eee;'/>
             <b>Netzbetreiber:</b> {Betreiber}<br/>
-            <b>Region (Bundesland):</b> {Bundesland}<br/>
-            <b>Ansprechpartner/Kontakt:</b> <span style='color:#e67e22;'>{Kontakt}</span><br/>
-            <b>Offizielle Webseite:</b> <a href='{Webseite}' target='_blank' style='color:#2980b9; text-decoration:none;'>{Webseite}</a>
+            <b>Region:</b> {Bundesland}<br/>
+            <b>Kontakt:</b> <span style='color:#e67e22;'>{Kontakt}</span><br/>
+            <b>Webseite:</b> <a href='{Webseite}' target='_blank' style='color:#2980b9; text-decoration:none;'>{Webseite}</a>
         </div>
     """
 else:
-    # ERWEITERTER KI-MODUS (Technische Daten + Kontakte + Mathematischer Mix)
     tooltip_html = """
-        <div style='font-family: sans-serif; padding: 12px; line-height: 1.6; min-width: 320px;'>
+        <div style='font-family: sans-serif; padding: 12px; line-height: 1.6; min-width: 340px;'>
             <b style='font-size:16px; color: #2c3e50;'>{Name}</b><br/>
             <hr style='margin:6px 0; border: 0; border-top: 1px solid #ccc;'/>
-            <b>Netzkapazität (Limit):</b> <span style='color:#27ae60; font-weight:bold;'>{Frei_MVA} MVA</span><br/>
+            <b>Netzanschlussleistung (Limit):</b> <span style='color:#27ae60; font-weight:bold;'>{Frei_MVA} MVA</span><br/>
+            <b>Belegte / Reservierte Leistung:</b> {Belegt_MVA} MVA<br/>
             
             <div style='background-color: #f8f9fa; padding: 8px; border-radius: 4px; margin-top: 5px; border-left: 4px solid #8e44ad;'>
-                <b style='color:#8e44ad; font-size:13px;'>📈 KI-Netzbelegungsplan (MVA):</b><br/>
+                <b style='color:#8e44ad; font-size:13px;'>📈 KI-Einspeisekonzept (Peak-Shaving):</b><br/>
                 <b>Konzept:</b> <span style='color:#2c3e50; font-weight:bold;'>{Strategie}</span><br/>
-                💨 Windkraft-Leistung (WEA): <b>{WEA_Leistung_MVA} MVA</b> ({VBS_Wind_h} h/Jahr)<br/>
-                ☀️ Photovoltaik-Leistung (PV): <b>{PV_Leistung_MVA} MVA</b> ({VBS_Solar_h} h/Jahr)<br/>
-                🔋 Speicherleistung (BESS): <span style='color:#27ae60; font-weight:bold;'>{Speicher_MVA} MVA</span>
+                💨 Max. Windkraft-Leistung: <b>{WEA_Leistung_MVA} MVA</b> ({VBS_Wind_h} h/Jahr)<br/>
+                ☀️ Max. Photovoltaik-Leistung: <b>{PV_Leistung_MVA} MVA</b> ({VBS_Solar_h} h/Jahr)<br/>
+                🔋 <b>BESS-Batteriepuffer: {Speicher_MVA} MVA</b> (federt Erzeugungsspitzen ab)
             </div>
             
             <hr style='margin:6px 0; border: 0; border-top: 1px solid #eee;'/>
