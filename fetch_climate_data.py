@@ -5,7 +5,7 @@ import time
 API_URL = "https://www.ebutilities.at/api/powerstations/list"
 headers = {'User-Agent': 'Mozilla/5.0'}
 
-print("📡 Schritt 1: Lade Live-Datenbank der Umspannwerke in Österreich...")
+print("📡 Schritt 1: Lade Datenbank der Umspannwerke in Österreich...")
 try:
     response = requests.get(API_URL, headers=headers, timeout=15)
     response.raise_for_status()
@@ -58,4 +58,4 @@ for idx, item in enumerate(powerstations):
 
 df = pd.DataFrame(clean_stations)
 df.to_csv("substations_climate_base.csv", index=False, encoding="utf-8")
-print("✅ Datenbank 'substations_climate_base.csv' erfolgreich auf Deutsch erstellt!")
+print("✅ Datenbank 'substations_climate_base.csv' erfolgreich erstellt!")
