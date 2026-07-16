@@ -114,7 +114,7 @@ def calculate_intelligent_mix(row):
         strategie_name = "PV-Anlage + BESS (Peak-Shaving)"
         farbe = [241, 196, 15, 210] # Gelb
         
-    # --- NEUE PEAK-SHAVING LOGIK (Anforderung Professor) ---
+    # --- NEUE PEAK-SHAVING LOGIK ---
     # Die Netzkapazität S wird als Basis-Einspeisung voll ausgenutzt.
     # Der Speicher (BESS) erlaubt eine Überdimensionierung der Anlagen, 
     # da er Erzeugungsspitzen (z.B. PV-Mittagsspitze) abfedert und verzögert einspeist.
