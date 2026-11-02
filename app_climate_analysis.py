@@ -5,6 +5,10 @@ import os
 
 st.set_page_config(page_title="SMART Grid Austria & Speicher AI", layout="wide")
 
+# Screening-Proxies (keine standortspezifische Ertragssimulation).
+PV_PERFORMANCE_RATIO = 0.85
+REFERENCE_IRRADIANCE_KW_PER_M2 = 1.0
+
 st.title("⚡ Monitoring des österreichischen Stromnetzes & Intelligente EE-Speicher-Planung")
 
 # Überprüfung der Datenbank
@@ -46,16 +50,17 @@ min_v, max_v = float(df["Frei_MVA"].min()), float(df["Frei_MVA"].max())
 range_mva = st.sidebar.slider("Verfügbare Netzkapazität (MVA)", min_v, max_v, (0.0, max_v))
 
 # =====================================================================
-# 🌤️ BLOCK 2: INTELLIGENTE ZUSATZFUNKTION (Vollbenutzungsstunden)
+# 🌤️ BLOCK 2: HEURISTISCHE RESSOURCENINDIKATOREN
 # =====================================================================
 st.sidebar.markdown("---")
-with st.sidebar.expander("🌤️ KI-Analyse: Dynamische EE-Aufteilung", expanded=True):
-    use_climate_analysis = st.checkbox("Wirtschaftliche Aufteilung aktivieren", value=True)
+with st.sidebar.expander("🌤️ Heuristische Ressourcenanalyse", expanded=True):
+    use_climate_analysis = st.checkbox("Heuristische Aufteilung aktivieren", value=True)
     
-    st.markdown("**Mindestanforderungen für Rentabilität:**")
+    st.markdown("**Screening-Schwellenwerte:**")
     # (4.0 anstatt 4.8 и 950 - anstatt 1050)
     target_wind = st.slider("Min. Windgeschwindigkeit (m/s)", 3.5, 8.5, 4.0, 0.1)
     target_solar = st.slider("Min. Sonneneinstrahlung (kWh/m²)", 950, 1350, 950, 25)
+    st.caption("PV-Vollbenutzungsstunden-Proxy: Globalstrahlung / 1 kW/m² × PR 0,85; keine standortspezifische Ertragssimulation.")
 
 # =====================================================================
 # 📐 BLOCK 3: 3D-SKALIERUNG
@@ -67,7 +72,7 @@ col_elevation = st.sidebar.slider("Höhenskalierung", 50, 800, 300, 50)
 
 
 # =====================================================================
-# 🧮 MATHEMATISCHER KERN: PEAK-SHAVING & SPEICHER-OPTIMIERUNG
+# 🧮 HEURISTISCHE EE-AUFTEILUNG & BESS-LEISTUNGSANSATZ
 # =====================================================================
 f_df = df[
     (df["Bundesland"].isin(selected_states)) &
@@ -87,7 +92,8 @@ def calculate_intelligent_mix(row):
     else:
         vbs_wind = min(3200.0, 1000.0 + (row['Wind_ms'] - 4.0) * 500.0)
         
-    vbs_solar = row['Solar_kWh'] * 0.85
+    # GHI [kWh/m²] / reference irradiance [kW/m²] × PR [-] gives equivalent full-load hours [h].
+    vbs_solar = (row['Solar_kWh'] / REFERENCE_IRRADIANCE_KW_PER_M2) * PV_PERFORMANCE_RATIO
     
     wind_ok = row['Wind_ms'] >= target_wind and vbs_wind > 0
     solar_ok = row['Solar_kWh'] >= target_solar
@@ -103,24 +109,23 @@ def calculate_intelligent_mix(row):
     # Bestimmung des Speicher-Faktors für Peak-Shaving
     if wind_ok and solar_ok:
         speicher_anteil = 0.20 
-        strategie_name = "Optimiertes Hybridkraftwerk + BESS"
+        strategie_name = "Hybrides Wind-PV-System + BESS (heuristisch)"
         farbe = [155, 89, 182, 210] # Lila
     elif wind_ok:
         speicher_anteil = 0.25 
-        strategie_name = "Windpark + BESS (Lastverschiebung)"
+        strategie_name = "Windpark + BESS (heuristisch)"
         farbe = [41, 128, 185, 210] # Blau
     else:
         speicher_anteil = 0.35 # Höherer Speicherbedarf für die Mittagssonne
-        strategie_name = "PV-Anlage + BESS (Peak-Shaving)"
+        strategie_name = "PV-Anlage + BESS (heuristisch)"
         farbe = [241, 196, 15, 210] # Gelb
         
-    # --- NEUE PEAK-SHAVING LOGIK ---
-    # Die Netzkapazität S wird als Basis-Einspeisung voll ausgenutzt.
-    # Der Speicher (BESS) erlaubt eine Überdimensionierung der Anlagen, 
-    # da er Erzeugungsspitzen (z.B. PV-Mittagsspitze) abfedert und verzögert einspeist.
+    # --- HEURISTISCHER CO-LOCATION-/BESS-ANSATZ ---
+    # S wird als verfügbare Einspeisekapazität verwendet. Die Überbauung des
+    # Netzanschlusses ist eine Szenarioannahme und wurde nicht simuliert.
     leistung_speicher = round(S * speicher_anteil, 1)
     
-    # Überbelegung des Netzanschlusses dank intelligenter Batterie-Pufferung
+    # Heuristische Überbauung des Netzanschlusses als Screening-Annahme
     leistung_wea = round(S * w_wind * (1 + speicher_anteil), 1)
     leistung_pv = round(S * w_solar * (1 + speicher_anteil), 1)
     
@@ -148,9 +153,9 @@ if not use_climate_analysis:
     col3.metric("Durchschn. freie Kapazität", f"{round(f_df['Frei_MVA'].mean(), 1)} MVA" if not f_df.empty else "0 MVA")
 else:
     counts = f_df['Strategie'].value_counts()
-    col1.metric("Wind+BESS Cluster", counts.get("Windpark + BESS (Lastverschiebung)", 0))
-    col2.metric("PV+BESS Peak-Shaving", counts.get("PV-Anlage + BESS (Peak-Shaving)", 0))
-    col3.metric("Optimierte Hybrid-Systeme", counts.get("Optimiertes Hybridkraftwerk + BESS", 0))
+    col1.metric("Wind+BESS-Kandidaten", counts.get("Windpark + BESS (heuristisch)", 0))
+    col2.metric("PV+BESS-Kandidaten", counts.get("PV-Anlage + BESS (heuristisch)", 0))
+    col3.metric("Hybride Kandidaten", counts.get("Hybrides Wind-PV-System + BESS (heuristisch)", 0))
 
 # =====================================================================
 # 🎯 DYNAMISCHE STRUKTURIERUNG DES TOOLTIPS (Wording angepasst)
@@ -178,7 +183,7 @@ else:
             <b>Belegte / Reservierte Leistung:</b> {Belegt_MVA} MVA<br/>
             
             <div style='background-color: #f8f9fa; padding: 8px; border-radius: 4px; margin-top: 5px; border-left: 4px solid #8e44ad;'>
-                <b style='color:#8e44ad; font-size:13px;'>📈 KI-Einspeisekonzept (Peak-Shaving):</b><br/>
+                <b style='color:#8e44ad; font-size:13px;'>📈 Heuristisches Einspeisekonzept:</b><br/>
                 <b>Konzept:</b> <span style='color:#2c3e50; font-weight:bold;'>{Strategie}</span><br/>
                 💨 Max. Windkraft-Leistung: <b>{WEA_Leistung_MVA} MVA</b> ({VBS_Wind_h} h/Jahr)<br/>
                 ☀️ Max. Photovoltaik-Leistung: <b>{PV_Leistung_MVA} MVA</b> ({VBS_Solar_h} h/Jahr)<br/>
