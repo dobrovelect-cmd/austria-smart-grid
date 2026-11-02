@@ -15,6 +15,8 @@ Die Klimakennwerte beziehen sich auf das Kalenderjahr 2024 und werden über die 
 
 - `Wind_ms`: arithmetischer Mittelwert der stündlichen Variable `wind_speed_100m` in **m/s**. Der API-Aufruf setzt `wind_speed_unit=ms` ausdrücklich und prüft die zurückgemeldete Einheit.
 - `Solar_kWh`: jährliche Summe der stündlichen Mittelwerte von `shortwave_radiation`, geteilt durch 1000. Die resultierende Einheit ist **kWh/m²** (globale kurzwellige Einstrahlung auf eine horizontale Fläche), nicht die elektrische PV-Erzeugung.
+- Der PV-Vollbenutzungsstunden-Proxy in der App wird als `Solar_kWh / 1 kW/m² × 0,85` berechnet. Der Faktor 0,85 ist ein vereinfachter Performance-Ratio-Ansatz; die Rechnung ist kein PV-Ertragsmodell für eine konkrete Modulfläche, Neigung oder Anlagenkonfiguration.
+- Die Kategorien und BESS-Leistungswerte sind heuristische Screening-Ausgaben. Die App führt weder Lastfluss- noch Dispatch- oder Kostenoptimierung durch.
 - Die Wetterwerte stammen aus räumlichen Reanalyse-/Modellgitterzellen und sind keine standortspezifischen Messungen oder Ertragsprognosen.
 
 Das bestehende CSV-Snapshot wurde korrigiert: Die zuvor mit der Open-Meteo-Standardkonfiguration gespeicherten Windwerte in km/h wurden durch 3,6 geteilt und in m/s umgerechnet. Bei einer erneuten Ausführung von `fetch_climate_data.py` werden die Klimadaten direkt in m/s angefordert. Da Netzkapazitätsdaten und Wetter-API aktualisiert werden können, kann ein neu erzeugter Snapshot von diesem Stand abweichen.
