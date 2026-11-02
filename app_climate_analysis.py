@@ -3,13 +3,13 @@ import pandas as pd
 import pydeck as pdk
 import os
 
-st.set_page_config(page_title="SMART Grid Austria & Speicher AI", layout="wide")
+st.set_page_config(page_title="Spatial Pre-Screening Austria", layout="wide")
 
 # Screening-Proxies (keine standortspezifische Ertragssimulation).
 PV_PERFORMANCE_RATIO = 0.85
 REFERENCE_IRRADIANCE_KW_PER_M2 = 1.0
 
-st.title("⚡ Monitoring des österreichischen Stromnetzes & Intelligente EE-Speicher-Planung")
+st.title("Räumliches Pre-Screening österreichischer Netzknoten für Wind, PV und BESS")
 
 # Überprüfung der Datenbank
 if not os.path.exists("substations_climate_base.csv"):
@@ -57,7 +57,6 @@ with st.sidebar.expander("🌤️ Heuristische Ressourcenanalyse", expanded=True
     use_climate_analysis = st.checkbox("Heuristische Aufteilung aktivieren", value=True)
     
     st.markdown("**Screening-Schwellenwerte:**")
-    # (4.0 anstatt 4.8 и 950 - anstatt 1050)
     target_wind = st.slider("Min. Windgeschwindigkeit (m/s)", 3.5, 8.5, 4.0, 0.1)
     target_solar = st.slider("Min. Sonneneinstrahlung (kWh/m²)", 950, 1350, 950, 25)
     st.caption("PV-Vollbenutzungsstunden-Proxy: Globalstrahlung / 1 kW/m² × PR 0,85; keine standortspezifische Ertragssimulation.")
