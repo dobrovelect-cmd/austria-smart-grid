@@ -19,6 +19,8 @@ Die Klimakennwerte beziehen sich auf das Kalenderjahr 2024 und werden über die 
 - Die Kategorien und BESS-Leistungswerte sind heuristische Screening-Ausgaben. Die App führt weder Lastfluss- noch Dispatch- oder Kostenoptimierung durch.
 - Die Wetterwerte stammen aus räumlichen Reanalyse-/Modellgitterzellen und sind keine standortspezifischen Messungen oder Ertragsprognosen.
 
+- Bei unvollständigen oder fehlerhaft formatierten Open-Meteo-JSON-Antworten wird der betreffende Standort-Batch erneut abgefragt und bei Bedarf rekursiv in kleinere Teil-Batches zerlegt. Der CSV-Snapshot wird erst nach erfolgreicher Verarbeitung aller gültigen Netzknoten ersetzt.
+
 Das bestehende CSV-Snapshot wurde korrigiert: Die zuvor mit der Open-Meteo-Standardkonfiguration gespeicherten Windwerte in km/h wurden durch 3,6 geteilt und in m/s umgerechnet. Bei einer erneuten Ausführung von `fetch_climate_data.py` werden die Klimadaten direkt in m/s angefordert. Da Netzkapazitätsdaten und Wetter-API aktualisiert werden können, kann ein neu erzeugter Snapshot von diesem Stand abweichen.
 
 ## Dateien
