@@ -11,90 +11,99 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Probe API methods and response headers
+      - name: Probe API method and POST payload formats
         shell: bash
         run: |
           set +e
           URL="https://www.ebutilities.at/api/powerstations/list"
-          for METHOD in GET HEAD OPTIONS; do
+          probe() {
+            LABEL="$1"
+            shift
             echo
-            echo "===== ${METHOD} ${URL} ====="
-            curl --silent --show-error --max-time 30 \
-              --request "${METHOD}" \
-              --user-agent "SMART-Grid-Austria-diagnostics/1.0" \
+            echo "===== $LABEL ====="
+            curl --silent --show-error --max-time 45 \
+              --user-agent "Mozilla/5.0 (compatible; SMART-Grid-Austria/1.0)" \
               --dump-header /tmp/headers.txt \
               --output /tmp/body.txt \
               --write-out "HTTP_STATUS=%{http_code}\nCONTENT_TYPE=%{content_type}\nURL=%{url_effective}\n" \
-              "${URL}"
-            grep -iE '^(HTTP/|allow:|content-type:|server:|location:|date:|access-control-)' /tmp/headers.txt || true
-            if [ "${METHOD}" != "HEAD" ]; then
-              echo "--- response body (first 1500 bytes) ---"
-              head -c 1500 /tmp/body.txt
-              echo
-            fi
-          done
+              "$@" "$URL"
+            grep -iE '^(HTTP/|allow:|content-type:|server:|location:|date:)' /tmp/headers.txt || true
+            echo "--- response body (first 5000 bytes) ---"
+            head -c 5000 /tmp/body.txt
+            echo
+          }
+          probe "GET" --request GET
+          probe "POST empty JSON" --request POST -H "Content-Type: application/json" --data '{}'
+          probe "POST empty body" --request POST -H "Content-Type: application/json" --data ''
+          probe "POST form encoded empty" --request POST -H "Content-Type: application/x-www-form-urlencoded" --data ''
+          probe "POST JSON page 1" --request POST -H "Content-Type: application/json" --data '{"page":1}'
 
-      - name: Inspect the official publication page and linked scripts
+      - name: Inspect the official page and JavaScript bundles
         run: |
           python - <<'PY'
+          import re
           from html.parser import HTMLParser
           from urllib.parse import urljoin
           from urllib.request import Request, urlopen
 
           page_url = "https://www.ebutilities.at/verfuegbare-netzanschlusskapazitaeten"
-          headers = {"User-Agent": "SMART-Grid-Austria-diagnostics/1.0"}
+          headers = {"User-Agent": "Mozilla/5.0 (compatible; SMART-Grid-Austria/1.0)"}
 
-          class ScriptParser(HTMLParser):
+          class Parser(HTMLParser):
               def __init__(self):
                   super().__init__()
                   self.scripts = []
-                  self.title = False
-                  self.title_text = []
+                  self.links = []
+                  self.in_title = False
+                  self.title = []
               def handle_starttag(self, tag, attrs):
                   attrs = dict(attrs)
                   if tag.lower() == "script" and attrs.get("src"):
                       self.scripts.append(urljoin(page_url, attrs["src"]))
+                  if tag.lower() == "link" and attrs.get("href"):
+                      self.links.append(urljoin(page_url, attrs["href"]))
                   if tag.lower() == "title":
-                      self.title = True
+                      self.in_title = True
               def handle_endtag(self, tag):
                   if tag.lower() == "title":
-                      self.title = False
+                      self.in_title = False
               def handle_data(self, data):
-                  if self.title:
-                      self.title_text.append(data)
+                  if self.in_title:
+                      self.title.append(data)
 
-          def read_url(url, limit=5_000_000):
+          def fetch(url, limit=10_000_000):
               req = Request(url, headers=headers)
-              with urlopen(req, timeout=30) as response:
-                  data = response.read(limit + 1)
-                  return response.status, response.headers, data[:limit]
+              with urlopen(req, timeout=30) as res:
+                  data = res.read(limit + 1)[:limit]
+                  return res.status, res.headers, data
 
-          status, response_headers, html = read_url(page_url)
+          status, response_headers, html = fetch(page_url)
+          text = html.decode("utf-8", errors="replace")
+          parser = Parser()
+          parser.feed(text)
           print(f"PAGE_STATUS={status}")
-          print(f"PAGE_CONTENT_TYPE={response_headers.get('Content-Type')}")
-          parser = ScriptParser()
-          parser.feed(html.decode("utf-8", errors="replace"))
-          print("PAGE_TITLE=" + "".join(parser.title_text).strip())
-          print("SCRIPT_COUNT=" + str(len(parser.scripts)))
+          print(f"PAGE_TITLE={''.join(parser.title).strip()}")
+          print(f"SCRIPT_COUNT={len(parser.scripts)}")
+          for item in parser.scripts:
+              print(f"SCRIPT_URL={item}")
+          print(f"PAGE_BYTES={len(html)}")
+          print(f"PAGE_HAS_API_ROUTE={'/api/' in text}")
 
-          html_text = html.decode("utf-8", errors="replace")
-          for needle in ("powerstations", "availableCapacity", "substationName", "/api/"):
-              print(f"PAGE_HAS_{needle}={needle in html_text}")
-
+          route_pattern = re.compile(r"""['"](/api/[A-Za-z0-9_./?=&-]+)['"]""")
           for script_url in parser.scripts:
               try:
-                  js_status, js_headers, js_data = read_url(script_url, limit=8_000_000)
-                  js_text = js_data.decode("utf-8", errors="replace")
-                  hits = []
-                  for needle in ("powerstations", "availableCapacity", "substationName", "powerstationId"):
-                      pos = js_text.find(needle)
-                      if pos >= 0:
-                          hits.append((needle, js_text[max(0, pos - 250):pos + 500]))
-                  if hits:
-                      print(f"\n===== SCRIPT {script_url} status={js_status} =====")
-                      for needle, excerpt in hits:
-                          print(f"--- MATCH {needle} ---")
-                          print(excerpt[:1200])
+                  js_status, js_headers, js_data = fetch(script_url, 20_000_000)
+                  js = js_data.decode("utf-8", errors="replace")
+                  print(f"\n===== BUNDLE {script_url} status={js_status} bytes={len(js_data)} =====")
+                  for route in sorted(set(route_pattern.findall(js))):
+                      print(f"API_ROUTE={route}")
+                  for needle in ("powerstations", "availableCapacity", "substationName",
+                                 "powerstationId", "axios", "fetch("):
+                      positions = [m.start() for m in re.finditer(re.escape(needle), js, re.I)]
+                      if positions:
+                          print(f"TOKEN {needle}: {len(positions)} match(es)")
+                          for pos in positions[:3]:
+                              print(js[max(0, pos - 250):pos + 700].replace("\\n", " ")[:1000])
               except Exception as exc:
-                  print(f"SCRIPT_FETCH_FAILED {script_url}: {exc}")
+                  print(f"BUNDLE_FETCH_FAILED {script_url}: {exc}")
           PY
