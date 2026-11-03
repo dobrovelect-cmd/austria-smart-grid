@@ -21,23 +21,23 @@ Die Klimakennwerte beziehen sich auf das Kalenderjahr 2024 und werden über die 
 
 - Bei unvollständigen oder fehlerhaft formatierten Open-Meteo-JSON-Antworten wird der betreffende Standort-Batch erneut abgefragt und bei Bedarf rekursiv in kleinere Teil-Batches zerlegt. Der CSV-Snapshot wird erst nach erfolgreicher Verarbeitung aller gültigen Netzknoten ersetzt.
 
-Das bestehende CSV-Snapshot wurde korrigiert: Die zuvor mit der Open-Meteo-Standardkonfiguration gespeicherten Windwerte in km/h wurden durch 3,6 geteilt und in m/s umgerechnet. Bei einer erneuten Ausführung von `fetch_climate_data.py` werden die Klimadaten direkt in m/s angefordert. Da Netzkapazitätsdaten und Wetter-API aktualisiert werden können, kann ein neu erzeugter Snapshot von diesem Stand abweichen.
+Der aktuelle CSV-Snapshot wurde am 3. November 2026 vollständig neu erzeugt. Dabei wurden die Netzknotendaten erneut von EbUtilities und die stündlichen Klimadaten für 2024 von Open-Meteo abgerufen. Die Windgeschwindigkeit wurde von der API explizit in m/s angefordert; der Collector prüft die zurückgemeldete Einheit. Der Snapshot umfasst 443 Netzknoten mit eindeutigen UIDs. Kennwerte dieses Snapshots: mittlere Windgeschwindigkeit 3,84 m/s (1,36–6,81 m/s), mittlere jährliche Globalstrahlung 1.309,5 kWh/m², 252 Netzknoten mit positiver freier Einspeisekapazität und 191 Netzknoten ohne ausgewiesene freie Kapazität.
 
 ## Dateien
 
 - `fetch_climate_data.py`: Abruf der Netzknoten- und Klimadaten.
-- `substations_climate_base.csv`: zusammengeführter Datensatz für 440 Netzknoten.
+- `substations_climate_base.csv`: am 3. November 2026 aktualisierter Datensatz für 443 Netzknoten.
 - `app_climate_analysis.py`: Streamlit-Anwendung für Filterung, Klassifikation und räumliche Darstellung.
 
 Die Klassifikation und die BESS-Leistungsansätze sind heuristische Screening-Parameter. Sie ersetzen weder eine elektrische Lastflussrechnung noch eine zeitaufgelöste Speicheroptimierung.
 
 ## Vollständige Aktualisierung des Datensatzes
 
-Nach dem Zusammenführen des Pull Requests kann der vollständige Abruf über GitHub Actions gestartet werden:
+Der vollständige Abruf kann bei Bedarf manuell über GitHub Actions gestartet werden:
 
 1. Repository öffnen und den Tab **Actions** auswählen.
 2. Den Workflow **Refresh network and climate dataset** öffnen.
 3. **Run workflow** auswählen und den gewünschten Branch angeben.
 4. Der Workflow lädt die Netzknotendaten neu, fragt die historischen Wetterdaten für alle gültigen Koordinaten paketweise ab, prüft den vollständigen Datensatz und committet die aktualisierte CSV auf den ausgewählten Branch.
 
-Der Workflow verwendet für Windgeschwindigkeit explizit m/s. Bei Fehlern oder unvollständigen Wetterantworten wird der bisherige CSV-Snapshot nicht überschrieben. Der Workflow kann manuell gestartet werden; es erfolgt keine automatische Änderung von `main` ohne einen manuellen Workflow-Start auf diesem Branch.
+Der Workflow verwendet für Windgeschwindigkeit explizit m/s. Bei Fehlern oder unvollständigen Wetterantworten wird der bisherige CSV-Snapshot nicht überschrieben. Der Workflow schreibt die aktualisierte CSV nach erfolgreicher Validierung auf den ausgewählten Branch. Der zuletzt erfolgreich aktualisierte Snapshot liegt auf `main`.
