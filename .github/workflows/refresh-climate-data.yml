@@ -1,0 +1,94 @@
+name: Refresh network and climate dataset
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: climate-dataset-refresh-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Rebuild 2024 climate snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out selected branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check Python syntax
+        run: python -m py_compile fetch_climate_data.py app_climate_analysis.py
+
+      - name: Rebuild network and climate dataset
+        run: python fetch_climate_data.py
+
+      - name: Validate rebuilt dataset
+        run: |
+          python - <<'PY'
+          import pandas as pd
+
+          path = "substations_climate_base.csv"
+          df = pd.read_csv(path)
+          required = {
+              "UID", "Name", "Frei_MVA", "Belegt_MVA", "Breite", "Länge",
+              "Bundesland", "Betreiber", "Wind_ms", "Solar_kWh"
+          }
+          missing = required.difference(df.columns)
+          if missing:
+              raise SystemExit(f"Missing columns: {sorted(missing)}")
+          if len(df) < 400:
+              raise SystemExit(f"Unexpectedly small dataset: {len(df)} rows")
+          if df["UID"].duplicated().any():
+              raise SystemExit("Duplicate UID values found")
+          numeric = ["Frei_MVA", "Belegt_MVA", "Breite", "Länge", "Wind_ms", "Solar_kWh"]
+          if df[numeric].isna().any().any():
+              raise SystemExit("Missing values in required numeric columns")
+          if not df["Wind_ms"].between(0, 100).all():
+              raise SystemExit("Wind_ms values outside 0-100 m/s")
+          if not df["Solar_kWh"].between(0, 3000).all():
+              raise SystemExit("Solar_kWh values outside 0-3000 kWh/m²")
+
+          summary = [
+              "## Climate snapshot validation",
+              f"- Rows: {len(df)}",
+              f"- Mean wind speed at 100 m: {df['Wind_ms'].mean():.2f} m/s",
+              f"- Wind range: {df['Wind_ms'].min():.2f}–{df['Wind_ms'].max():.2f} m/s",
+              f"- Mean annual shortwave irradiation: {df['Solar_kWh'].mean():.1f} kWh/m²",
+              f"- Positive available grid capacity: {(df['Frei_MVA'] > 0).sum()} nodes",
+              f"- Snapshot generation date (UTC): {pd.Timestamp.utcnow().isoformat()}",
+          ]
+          with open(__import__("os").environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("\n".join(summary) + "\n")
+          print("\n".join(summary))
+          PY
+
+      - name: Commit refreshed CSV to the selected branch
+        env:
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add substations_climate_base.csv
+          if git diff --cached --quiet; then
+            echo "The refreshed dataset is unchanged."
+          else
+            git commit -m "Refresh network and 2024 climate snapshot"
+            git push origin "HEAD:${TARGET_BRANCH}"
+          fi
