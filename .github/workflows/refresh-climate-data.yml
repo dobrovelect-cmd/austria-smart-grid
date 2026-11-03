@@ -33,6 +33,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Check Python syntax
+        run: python -m py_compile fetch_climate_data.py app_climate_analysis.py
+
       - name: Rebuild network and climate dataset
         run: python fetch_climate_data.py
 
