@@ -57,7 +57,7 @@ with st.sidebar.expander("🌤️ Heuristische Ressourcenanalyse", expanded=True
     use_climate_analysis = st.checkbox("Heuristische Aufteilung aktivieren", value=True)
     
     st.markdown("**Screening-Schwellenwerte:**")
-    target_wind = st.slider("Min. Windgeschwindigkeit (m/s)", 3.5, 8.5, 4.0, 0.1)
+    target_wind = st.slider("Min. Windgeschwindigkeit auf 100 m (m/s)", 3.5, 8.5, 4.0, 0.1)
     target_solar = st.slider("Min. Sonneneinstrahlung (kWh/m²)", 950, 1350, 950, 25)
     st.caption("PV-Vollbenutzungsstunden-Proxy: Globalstrahlung / 1 kW/m² × PR 0,85; keine standortspezifische Ertragssimulation.")
 
@@ -79,13 +79,14 @@ f_df = df[
     (df["Frei_MVA"].between(range_mva[0], range_mva[1]))
 ].copy()
 
-def calculate_intelligent_mix(row):
+def calculate_heuristic_mix(row):
     S = row['Frei_MVA']
     
     if not use_climate_analysis:
         return row['Farbe_Netz'], "Basis-Netzmodus", 0.0, 0.0, 0.0, 0, 0
     
-    # 1. Stundenberechnung (VBS)
+    # 1. Vereinfachte Ressourcen- und Vollbenutzungsstunden-Proxies
+    # The wind-hour proxy is a rule-based index, not a simulated energy yield.
     if row['Wind_ms'] < 4.0:
         vbs_wind = 0.0
     else:
@@ -105,7 +106,7 @@ def calculate_intelligent_mix(row):
     w_wind = (vbs_wind / total_vbs) if wind_ok else 0.0
     w_solar = (vbs_solar / total_vbs) if solar_ok else 0.0
     
-    # Bestimmung des Speicher-Faktors für Peak-Shaving
+    # Heuristischer BESS-Leistungsanteil; nicht optimiert oder simuliert
     if wind_ok and solar_ok:
         speicher_anteil = 0.20 
         strategie_name = "Hybrides Wind-PV-System + BESS (heuristisch)"
@@ -131,7 +132,7 @@ def calculate_intelligent_mix(row):
     return farbe, strategie_name, leistung_wea, leistung_pv, leistung_speicher, int(vbs_wind), int(vbs_solar)
 
 if not f_df.empty:
-    res = f_df.apply(calculate_intelligent_mix, axis=1)
+    res = f_df.apply(calculate_heuristic_mix, axis=1)
     f_df['Finale_Farbe'] = [r[0] for r in res]
     f_df['Strategie'] = [r[1] for r in res]
     f_df['WEA_Leistung_MVA'] = [r[2] for r in res]
@@ -157,7 +158,7 @@ else:
     col3.metric("Hybride Kandidaten", counts.get("Hybrides Wind-PV-System + BESS (heuristisch)", 0))
 
 # =====================================================================
-# 🎯 DYNAMISCHE STRUKTURIERUNG DES TOOLTIPS (Wording angepasst)
+# 🎯 TOOLTIP FÜR SCREENING-INDIKATOREN
 # =====================================================================
 if not use_climate_analysis:
     tooltip_html = """
@@ -184,9 +185,9 @@ else:
             <div style='background-color: #f8f9fa; padding: 8px; border-radius: 4px; margin-top: 5px; border-left: 4px solid #8e44ad;'>
                 <b style='color:#8e44ad; font-size:13px;'>📈 Heuristisches Einspeisekonzept:</b><br/>
                 <b>Konzept:</b> <span style='color:#2c3e50; font-weight:bold;'>{Strategie}</span><br/>
-                💨 Max. Windkraft-Leistung: <b>{WEA_Leistung_MVA} MVA</b> ({VBS_Wind_h} h/Jahr)<br/>
-                ☀️ Max. Photovoltaik-Leistung: <b>{PV_Leistung_MVA} MVA</b> ({VBS_Solar_h} h/Jahr)<br/>
-                🔋 <b>BESS-Batteriepuffer: {Speicher_MVA} MVA</b> (federt Erzeugungsspitzen ab)
+                💨 Wind-Leistungsansatz: <b>{WEA_Leistung_MVA} MVA</b> (Wind-Proxy: {VBS_Wind_h} h/a)<br/>
+                ☀️ PV-Leistungsansatz: <b>{PV_Leistung_MVA} MVA</b> (PV-Äquivalentstunden-Proxy: {VBS_Solar_h} h/a)<br/>
+                🔋 <b>Angesetzte BESS-Leistung: {Speicher_MVA} MVA</b> (heuristischer Wert)
             </div>
             
             <hr style='margin:6px 0; border: 0; border-top: 1px solid #eee;'/>
