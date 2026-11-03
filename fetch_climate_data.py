@@ -126,8 +126,8 @@ def parse_weather_response(payload, expected_count):
     return results
 
 
-def fetch_weather_batch(stations):
-    """Fetch historical weather for up to BATCH_SIZE locations in one API call."""
+def fetch_weather_batch(stations, depth=0):
+    """Fetch weather robustly; retry malformed responses and split failed batches."""
     params = {
         "latitude": ",".join(f"{station['Breite']:.6f}" for station in stations),
         "longitude": ",".join(f"{station['Länge']:.6f}" for station in stations),
@@ -137,9 +137,58 @@ def fetch_weather_batch(stations):
         "wind_speed_unit": "ms",
         "timezone": "Europe/Vienna",
     }
-    response = session.get(OPEN_METEO_URL, params=params, timeout=(15, 90))
-    response.raise_for_status()
-    return parse_weather_response(response.json(), len(stations))
+
+    # A successful HTTP status does not guarantee a complete JSON body.
+    # Retry JSON decoding failures explicitly; the HTTP adapter only retries
+    # transport errors and selected HTTP status codes.
+    attempts = 5 if len(stations) == 1 else 3
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        response = None
+        try:
+            response = session.get(
+                OPEN_METEO_URL, params=params, timeout=(15, 120)
+            )
+            response.raise_for_status()
+            payload = response.json()
+            return parse_weather_response(payload, len(stations))
+        except requests.exceptions.JSONDecodeError as exc:
+            last_error = exc
+            response_size = len(response.content) if response is not None else 0
+            position = getattr(exc, "pos", None)
+            excerpt = ""
+            if response is not None and position is not None:
+                body = response.text
+                excerpt = body[max(0, position - 80):position + 80]
+            print(
+                f"⚠️ Open-Meteo lieferte ungültiges JSON für "
+                f"{len(stations)} Standort(e), Versuch {attempt}/{attempts}; "
+                f"Antwortgröße={response_size} Byte, Fehlerposition={position}, "
+                f"Ausschnitt={excerpt!r}"
+            )
+            if attempt < attempts:
+                time.sleep(min(2 ** attempt, 12))
+
+    # If a multi-location response is malformed repeatedly, split it in half.
+    # This prevents one oversized or corrupted response from aborting all 443 nodes.
+    if len(stations) > 1:
+        midpoint = len(stations) // 2
+        left = stations[:midpoint]
+        right = stations[midpoint:]
+        names = ", ".join(station["Name"] for station in stations)
+        print(
+            f"⚠️ Teile fehlerhaften Open-Meteo-Batch in "
+            f"{len(left)} + {len(right)} Standorte auf: {names}"
+        )
+        left_results = fetch_weather_batch(left, depth + 1)
+        right_results = fetch_weather_batch(right, depth + 1)
+        return left_results + right_results
+
+    station_name = stations[0]["Name"] if stations else "unbekannter Netzknoten"
+    raise RuntimeError(
+        f"Open-Meteo lieferte auch nach {attempts} Versuchen kein gültiges "
+        f"JSON für {station_name}: {last_error}"
+    )
 
 
 def main():
