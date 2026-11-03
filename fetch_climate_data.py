@@ -1,4 +1,6 @@
+import os
 import time
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -8,8 +10,11 @@ from urllib3.util.retry import Retry
 GRID_API_URL = "https://www.ebutilities.at/api/powerstations/list"
 OPEN_METEO_URL = "https://archive-api.open-meteo.com/v1/archive"
 REQUEST_HEADERS = {"User-Agent": "SMART-Grid-Austria/1.0 (research data collection)"}
+BATCH_SIZE = 10
+REQUEST_DELAY_SECONDS = 0.5
+OUTPUT_FILE = Path("substations_climate_base.csv")
 
-# Retry temporary API failures (including rate limiting) and honour Retry-After.
+# Retry temporary API failures and honour Retry-After responses.
 retry_policy = Retry(
     total=5,
     connect=5,
@@ -32,53 +37,107 @@ def parse_float(value, default=None):
     return float(str(value).strip().replace(",", "."))
 
 
-def fetch_weather(latitude, longitude):
-    """Fetch hourly 2024 wind and shortwave radiation with explicit SI units."""
+def prepare_station(item, index):
+    """Normalise one EbUtilities record before making weather requests."""
+    latitude = parse_float(item.get("latitude"))
+    longitude = parse_float(item.get("longitude"))
+    if latitude is None or longitude is None or latitude == 0 or longitude == 0:
+        return None
+
+    return {
+        "UID": item.get("powerstationId", index),
+        "Name": item.get("substationName", "Unbekannt"),
+        "Frei_MVA": parse_float(item.get("availableCapacity"), 0.0),
+        "Belegt_MVA": parse_float(item.get("bookedCapacity"), 0.0),
+        "Breite": latitude,
+        "Länge": longitude,
+        "Bundesland": item.get("state", "N/A"),
+        "Betreiber": item.get("networkOperator", "N/A"),
+        "Kontakt": str(
+            item.get("contact", item.get("contactEmail", item.get("email", "N/A")))
+        ),
+        "Webseite": str(
+            item.get("website", item.get("url", item.get("operatorUrl", "N/A")))
+        ),
+    }
+
+
+def parse_weather_response(payload, expected_count):
+    """Normalise Open-Meteo's single-location and multi-location response formats."""
+    if isinstance(payload, dict):
+        if payload.get("error"):
+            raise ValueError(payload.get("reason", "Open-Meteo returned an error"))
+        responses = [payload]
+    elif isinstance(payload, list):
+        responses = payload
+    else:
+        raise ValueError("Unexpected Open-Meteo response format")
+
+    if len(responses) != expected_count:
+        raise ValueError(
+            f"Open-Meteo returned {len(responses)} locations; "
+            f"expected {expected_count}"
+        )
+
+    results = []
+    for location_index, weather in enumerate(responses):
+        if weather.get("error"):
+            raise ValueError(
+                f"Open-Meteo location {location_index}: "
+                f"{weather.get('reason', 'API error')}"
+            )
+
+        hourly = weather.get("hourly", {})
+        hourly_units = weather.get("hourly_units", {})
+        wind_values = hourly.get("wind_speed_100m")
+        radiation_values = hourly.get("shortwave_radiation")
+
+        if hourly_units.get("wind_speed_100m") != "m/s":
+            raise ValueError(
+                "Open-Meteo unit mismatch: expected wind_speed_100m in m/s, "
+                f"received {hourly_units.get('wind_speed_100m')!r}"
+            )
+        if not wind_values or not radiation_values:
+            raise ValueError(
+                f"Open-Meteo location {location_index} returned incomplete hourly data"
+            )
+        if len(wind_values) != len(radiation_values):
+            raise ValueError(
+                f"Open-Meteo location {location_index}: weather arrays differ in length"
+            )
+
+        wind = pd.to_numeric(pd.Series(wind_values), errors="coerce")
+        radiation = pd.to_numeric(pd.Series(radiation_values), errors="coerce")
+        if wind.isna().any() or radiation.isna().any():
+            raise ValueError(
+                f"Open-Meteo location {location_index}: missing or non-numeric values"
+            )
+
+        # Hourly mean wind speed at 100 m above ground, expressed in m/s.
+        average_wind_ms = round(float(wind.mean()), 2)
+
+        # shortwave_radiation is the hourly mean irradiance in W/m².
+        # Sum over hourly intervals and divide by 1000 -> annual irradiation kWh/m².
+        annual_shortwave_kwh_m2 = round(float(radiation.sum()) / 1000.0, 1)
+        results.append((average_wind_ms, annual_shortwave_kwh_m2))
+
+    return results
+
+
+def fetch_weather_batch(stations):
+    """Fetch historical weather for up to BATCH_SIZE locations in one API call."""
     params = {
-        "latitude": latitude,
-        "longitude": longitude,
+        "latitude": ",".join(f"{station['Breite']:.6f}" for station in stations),
+        "longitude": ",".join(f"{station['Länge']:.6f}" for station in stations),
         "start_date": "2024-01-01",
         "end_date": "2024-12-31",
         "hourly": "wind_speed_100m,shortwave_radiation",
         "wind_speed_unit": "ms",
-        "timezone": "Europe/Berlin",
+        "timezone": "Europe/Vienna",
     }
-    response = session.get(OPEN_METEO_URL, params=params, timeout=(15, 60))
+    response = session.get(OPEN_METEO_URL, params=params, timeout=(15, 90))
     response.raise_for_status()
-    payload = response.json()
-
-    if payload.get("error"):
-        raise ValueError(payload.get("reason", "Open-Meteo returned an error"))
-
-    hourly = payload.get("hourly", {})
-    hourly_units = payload.get("hourly_units", {})
-    wind_values = hourly.get("wind_speed_100m")
-    radiation_values = hourly.get("shortwave_radiation")
-
-    if hourly_units.get("wind_speed_100m") != "m/s":
-        raise ValueError(
-            "Open-Meteo unit mismatch: expected wind_speed_100m in m/s, "
-            f"received {hourly_units.get('wind_speed_100m')!r}"
-        )
-    if not wind_values or not radiation_values:
-        raise ValueError("Open-Meteo returned incomplete hourly weather data")
-    if len(wind_values) != len(radiation_values):
-        raise ValueError("Wind and radiation arrays have different lengths")
-
-    wind = pd.to_numeric(pd.Series(wind_values), errors="coerce")
-    radiation = pd.to_numeric(pd.Series(radiation_values), errors="coerce")
-
-    if wind.isna().any() or radiation.isna().any():
-        raise ValueError("Open-Meteo data contain missing or non-numeric values")
-
-    # Hourly mean wind speed at 100 m above ground, expressed in m/s.
-    average_wind_ms = round(float(wind.mean()), 2)
-
-    # shortwave_radiation is the hourly mean irradiance in W/m².
-    # Sum over hourly intervals and divide by 1000 -> annual irradiation kWh/m².
-    annual_shortwave_kwh_m2 = round(float(radiation.sum()) / 1000.0, 1)
-
-    return average_wind_ms, annual_shortwave_kwh_m2
+    return parse_weather_response(response.json(), len(stations))
 
 
 def main():
@@ -86,105 +145,84 @@ def main():
     response = session.get(GRID_API_URL, timeout=(15, 60))
     response.raise_for_status()
     powerstations = response.json().get("powerstations", [])
-
     if not powerstations:
         raise RuntimeError("EbUtilities returned no powerstation records.")
 
-    clean_stations = []
-    failed_stations = []
-    expected_stations = 0
+    stations = []
+    skipped_coordinates = []
+    for index, item in enumerate(powerstations):
+        station = prepare_station(item, index)
+        if station is None:
+            skipped_coordinates.append(item.get("substationName", f"Index {index}"))
+        else:
+            stations.append(station)
+
+    if not stations:
+        raise RuntimeError("No powerstation records contain valid coordinates.")
 
     print(
-        f"Gefunden: {len(powerstations)} Datensätze. "
-        "Starte historische Klimadaten-Abfrage für 2024..."
+        f"Gefunden: {len(powerstations)} Datensätze; "
+        f"{len(stations)} mit gültigen Koordinaten. "
+        f"Starte historische Klimadaten-Abfrage für 2024 in Paketen zu {BATCH_SIZE}..."
     )
-
-    for idx, item in enumerate(powerstations):
-        station_name = item.get("substationName", f"Index {idx}")
-        try:
-            latitude = parse_float(item.get("latitude"))
-            longitude = parse_float(item.get("longitude"))
-            if latitude is None or longitude is None or latitude == 0 or longitude == 0:
-                print(f"⚠️ Überspringe {station_name}: ungültige Koordinaten")
-                continue
-
-            expected_stations += 1
-            average_wind_ms, annual_shortwave_kwh_m2 = fetch_weather(
-                latitude, longitude
-            )
-
-            contact = item.get(
-                "contact",
-                item.get("contactEmail", item.get("email", "N/A")),
-            )
-            website = item.get(
-                "website",
-                item.get("url", item.get("operatorUrl", "N/A")),
-            )
-
-            clean_stations.append(
-                {
-                    "UID": item.get("powerstationId", idx),
-                    "Name": station_name,
-                    "Frei_MVA": parse_float(item.get("availableCapacity"), 0.0),
-                    "Belegt_MVA": parse_float(item.get("bookedCapacity"), 0.0),
-                    "Breite": latitude,
-                    "Länge": longitude,
-                    "Bundesland": item.get("state", "N/A"),
-                    "Betreiber": item.get("networkOperator", "N/A"),
-                    "Kontakt": str(contact),
-                    "Webseite": str(website),
-                    "Wind_ms": average_wind_ms,
-                    "Solar_kWh": annual_shortwave_kwh_m2,
-                }
-            )
-
-            if len(clean_stations) % 20 == 0:
-                print(
-                    f"▓ Fortschritt: {len(clean_stations)}/{expected_stations} "
-                    "gültige Netzknoten verarbeitet..."
-                )
-
-        except Exception as exc:
-            failed_stations.append((station_name, str(exc)))
-            print(f"⚠️ Fehler bei {station_name}: {exc}")
-
-        # Conservative spacing between archive API requests.
-        time.sleep(0.5)
-
-    if failed_stations:
-        failed_names = ", ".join(name for name, _ in failed_stations[:10])
-        raise RuntimeError(
-            f"{len(failed_stations)} von {expected_stations} Netzknoten konnten "
-            f"nicht vollständig verarbeitet werden. Fehlerhafte Datensätze: "
-            f"{failed_names}. CSV wurde nicht überschrieben."
+    if skipped_coordinates:
+        print(
+            f"⚠️ {len(skipped_coordinates)} Datensätze ohne gültige Koordinaten "
+            "werden nicht verarbeitet."
         )
 
-    if not clean_stations:
-        raise RuntimeError("Keine Netzknoten mit vollständigen Klimadaten erstellt.")
+    clean_stations = []
+    total_batches = (len(stations) + BATCH_SIZE - 1) // BATCH_SIZE
+
+    for batch_index in range(total_batches):
+        start = batch_index * BATCH_SIZE
+        batch = stations[start : start + BATCH_SIZE]
+        weather_results = fetch_weather_batch(batch)
+
+        for station, (average_wind_ms, annual_shortwave_kwh_m2) in zip(
+            batch, weather_results
+        ):
+            output_record = dict(station)
+            output_record["Wind_ms"] = average_wind_ms
+            output_record["Solar_kWh"] = annual_shortwave_kwh_m2
+            clean_stations.append(output_record)
+
+        print(
+            f"▓ Fortschritt: Paket {batch_index + 1}/{total_batches}; "
+            f"{len(clean_stations)}/{len(stations)} Netzknoten verarbeitet."
+        )
+        if batch_index + 1 < total_batches:
+            time.sleep(REQUEST_DELAY_SECONDS)
 
     df = pd.DataFrame(clean_stations)
 
+    if df.empty or len(df) != len(stations):
+        raise RuntimeError(
+            f"Datensatz unvollständig: {len(df)} von {len(stations)} Knoten."
+        )
     if df["UID"].duplicated().any():
         duplicated = df.loc[df["UID"].duplicated(), "UID"].tolist()
         raise RuntimeError(f"Doppelte Netzknoten-IDs gefunden: {duplicated[:10]}")
+    if df[["Wind_ms", "Solar_kWh", "Frei_MVA", "Belegt_MVA"]].isna().any().any():
+        raise RuntimeError("Final dataset contains missing numeric values.")
+    if not df["Wind_ms"].between(0, 100).all():
+        raise RuntimeError("Wind_ms contains implausible values outside 0–100 m/s.")
+    if not df["Solar_kWh"].between(0, 3000).all():
+        raise RuntimeError("Solar_kWh contains implausible values outside 0–3000 kWh/m².")
 
-    if len(df) != expected_stations:
-        raise RuntimeError(
-            f"Datensatz unvollständig: {len(df)} von {expected_stations} Knoten."
-        )
-
-    df.to_csv("substations_climate_base.csv", index=False, encoding="utf-8")
+    # Write to a temporary file first; replace the previous snapshot only after
+    # every location was retrieved and all validation checks have passed.
+    temporary_file = OUTPUT_FILE.with_suffix(OUTPUT_FILE.suffix + ".tmp")
+    df.to_csv(temporary_file, index=False, encoding="utf-8")
+    os.replace(temporary_file, OUTPUT_FILE)
 
     print(
         f"✅ CSV erfolgreich erstellt: {len(df)} Netzknoten; "
         f"Wind_ms in m/s; Solar_kWh in kWh/m²."
     )
     print(
-        "Wind_ms Mittelwert: "
-        f"{df['Wind_ms'].mean():.2f} m/s; "
-        "Solar_kWh Mittelwert: "
-        f"{df['Solar_kWh'].mean():.1f} kWh/m²."
+        f"Wind_ms Mittelwert: {df['Wind_ms'].mean():.2f} m/s; "
+        f"Solar_kWh Mittelwert: {df['Solar_kWh'].mean():.1f} kWh/m²."
     )
 
 
