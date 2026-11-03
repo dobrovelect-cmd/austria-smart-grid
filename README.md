@@ -28,3 +28,14 @@ Das bestehende CSV-Snapshot wurde korrigiert: Die zuvor mit der Open-Meteo-Stand
 - `app_climate_analysis.py`: Streamlit-Anwendung für Filterung, Klassifikation und räumliche Darstellung.
 
 Die Klassifikation und die BESS-Leistungsansätze sind heuristische Screening-Parameter. Sie ersetzen weder eine elektrische Lastflussrechnung noch eine zeitaufgelöste Speicheroptimierung.
+
+## Vollständige Aktualisierung des Datensatzes
+
+Nach dem Zusammenführen des Pull Requests kann der vollständige Abruf über GitHub Actions gestartet werden:
+
+1. Repository öffnen und den Tab **Actions** auswählen.
+2. Den Workflow **Refresh network and climate dataset** öffnen.
+3. **Run workflow** auswählen und den gewünschten Branch angeben.
+4. Der Workflow lädt die Netzknotendaten neu, fragt die historischen Wetterdaten für alle gültigen Koordinaten paketweise ab, prüft den vollständigen Datensatz und committet die aktualisierte CSV auf den ausgewählten Branch.
+
+Der Workflow verwendet für Windgeschwindigkeit explizit m/s. Bei Fehlern oder unvollständigen Wetterantworten wird der bisherige CSV-Snapshot nicht überschrieben. Der Workflow kann manuell gestartet werden; es erfolgt keine automatische Änderung von `main` ohne einen manuellen Workflow-Start auf diesem Branch.
