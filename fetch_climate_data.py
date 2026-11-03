@@ -22,7 +22,8 @@ retry_policy = Retry(
     status=5,
     backoff_factor=1.0,
     status_forcelist=(429, 500, 502, 503, 504),
-    allowed_methods=frozenset(["GET"]),
+    # POST is safe to retry here: the endpoint only returns a station list.
+    allowed_methods=frozenset(["GET", "POST"]),
     respect_retry_after_header=True,
 )
 session = requests.Session()
@@ -45,7 +46,8 @@ def prepare_station(item, index):
         return None
 
     return {
-        "UID": item.get("powerstationId", index),
+        # EbUtilities now exposes the station identifier as "uid".
+        "UID": item.get("uid", item.get("powerstationId", index)),
         "Name": item.get("substationName", "Unbekannt"),
         "Frei_MVA": parse_float(item.get("availableCapacity"), 0.0),
         "Belegt_MVA": parse_float(item.get("bookedCapacity"), 0.0),
@@ -142,9 +144,16 @@ def fetch_weather_batch(stations):
 
 def main():
     print("📡 Schritt 1: Lade österreichische Netzknotendaten...")
-    response = session.get(GRID_API_URL, timeout=(15, 60))
+    # EbUtilities changed this listing endpoint from GET to POST.
+    # An empty JSON object is accepted and returns the complete station list.
+    response = session.post(GRID_API_URL, json={}, timeout=(15, 60))
     response.raise_for_status()
-    powerstations = response.json().get("powerstations", [])
+    grid_payload = response.json()
+    if grid_payload.get("error"):
+        raise RuntimeError(f"EbUtilities API error: {grid_payload['error']}")
+    powerstations = grid_payload.get("powerstations", [])
+    if not isinstance(powerstations, list):
+        raise RuntimeError("EbUtilities response field 'powerstations' is not a list.")
     if not powerstations:
         raise RuntimeError("EbUtilities returned no powerstation records.")
 
