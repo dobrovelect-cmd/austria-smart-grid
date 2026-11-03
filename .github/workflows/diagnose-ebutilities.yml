@@ -1,0 +1,100 @@
+name: Diagnose EbUtilities capacity source
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe API methods and response headers
+        shell: bash
+        run: |
+          set +e
+          URL="https://www.ebutilities.at/api/powerstations/list"
+          for METHOD in GET HEAD OPTIONS; do
+            echo
+            echo "===== ${METHOD} ${URL} ====="
+            curl --silent --show-error --max-time 30 \
+              --request "${METHOD}" \
+              --user-agent "SMART-Grid-Austria-diagnostics/1.0" \
+              --dump-header /tmp/headers.txt \
+              --output /tmp/body.txt \
+              --write-out "HTTP_STATUS=%{http_code}\nCONTENT_TYPE=%{content_type}\nURL=%{url_effective}\n" \
+              "${URL}"
+            grep -iE '^(HTTP/|allow:|content-type:|server:|location:|date:|access-control-)' /tmp/headers.txt || true
+            if [ "${METHOD}" != "HEAD" ]; then
+              echo "--- response body (first 1500 bytes) ---"
+              head -c 1500 /tmp/body.txt
+              echo
+            fi
+          done
+
+      - name: Inspect the official publication page and linked scripts
+        run: |
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from urllib.parse import urljoin
+          from urllib.request import Request, urlopen
+
+          page_url = "https://www.ebutilities.at/verfuegbare-netzanschlusskapazitaeten"
+          headers = {"User-Agent": "SMART-Grid-Austria-diagnostics/1.0"}
+
+          class ScriptParser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.scripts = []
+                  self.title = False
+                  self.title_text = []
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  if tag.lower() == "script" and attrs.get("src"):
+                      self.scripts.append(urljoin(page_url, attrs["src"]))
+                  if tag.lower() == "title":
+                      self.title = True
+              def handle_endtag(self, tag):
+                  if tag.lower() == "title":
+                      self.title = False
+              def handle_data(self, data):
+                  if self.title:
+                      self.title_text.append(data)
+
+          def read_url(url, limit=5_000_000):
+              req = Request(url, headers=headers)
+              with urlopen(req, timeout=30) as response:
+                  data = response.read(limit + 1)
+                  return response.status, response.headers, data[:limit]
+
+          status, response_headers, html = read_url(page_url)
+          print(f"PAGE_STATUS={status}")
+          print(f"PAGE_CONTENT_TYPE={response_headers.get('Content-Type')}")
+          parser = ScriptParser()
+          parser.feed(html.decode("utf-8", errors="replace"))
+          print("PAGE_TITLE=" + "".join(parser.title_text).strip())
+          print("SCRIPT_COUNT=" + str(len(parser.scripts)))
+
+          html_text = html.decode("utf-8", errors="replace")
+          for needle in ("powerstations", "availableCapacity", "substationName", "/api/"):
+              print(f"PAGE_HAS_{needle}={needle in html_text}")
+
+          for script_url in parser.scripts:
+              try:
+                  js_status, js_headers, js_data = read_url(script_url, limit=8_000_000)
+                  js_text = js_data.decode("utf-8", errors="replace")
+                  hits = []
+                  for needle in ("powerstations", "availableCapacity", "substationName", "powerstationId"):
+                      pos = js_text.find(needle)
+                      if pos >= 0:
+                          hits.append((needle, js_text[max(0, pos - 250):pos + 500]))
+                  if hits:
+                      print(f"\n===== SCRIPT {script_url} status={js_status} =====")
+                      for needle, excerpt in hits:
+                          print(f"--- MATCH {needle} ---")
+                          print(excerpt[:1200])
+              except Exception as exc:
+                  print(f"SCRIPT_FETCH_FAILED {script_url}: {exc}")
+          PY
