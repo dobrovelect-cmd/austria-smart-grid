@@ -31,6 +31,19 @@ Der aktuelle CSV-Snapshot wurde am 3. November 2026 vollständig neu erzeugt. Da
 
 Die Klassifikation und die BESS-Leistungsansätze sind heuristische Screening-Parameter. Sie ersetzen weder eine elektrische Lastflussrechnung noch eine zeitaufgelöste Speicheroptimierung.
 
+
+## Interaktive Web-Demonstration
+
+Die Streamlit-Anwendung kann über Streamlit Community Cloud öffentlich bereitgestellt werden:
+
+1. Bei [Streamlit Community Cloud](https://share.streamlit.io/) mit GitHub anmelden und den GitHub-Zugriff autorisieren.
+2. **Create app** auswählen.
+3. Repository: `dobrovelect-cmd/austria-smart-grid); Branch: `main`; App file path: `app_climate_analysis.py`.
+4. Unter **Advanced settings** Python **3.11** auswählen, damit die Laufzeit zur GitHub-Actions-Umgebung passt.
+5. **Deploy** wählen. Streamlit erstellt eine öffentliche `*.streamlit.app`-URL, die anschließend in Publikationen und Präsentationen verlinkt werden kann.
+
+Die Anwendung verwendet den im Repository gespeicherten CSV-Snapshot. Sie ruft beim Öffnen der Web-Demo nicht selbstständig alle Wetterdaten erneut ab. Die vollständige Datenaktualisierung erfolgt separat über den GitHub-Actions-Workflow **Refresh network and climate dataset**.
+
 ## Vollständige Aktualisierung des Datensatzes
 
 Der vollständige Abruf kann bei Bedarf manuell über GitHub Actions gestartet werden:
