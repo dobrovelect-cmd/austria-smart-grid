@@ -38,7 +38,7 @@ Die Streamlit-Anwendung kann über Streamlit Community Cloud öffentlich bereitg
 
 1. Bei [Streamlit Community Cloud](https://share.streamlit.io/) mit GitHub anmelden und den GitHub-Zugriff autorisieren.
 2. **Create app** auswählen.
-3. Repository: `dobrovelect-cmd/austria-smart-grid); Branch: `main`; App file path: `app_climate_analysis.py`.
+3. Repository: `dobrovelect-cmd/austria-smart-grid`; Branch: `main`; App file path: `app_climate_analysis.py`.
 4. Unter **Advanced settings** Python **3.11** auswählen, damit die Laufzeit zur GitHub-Actions-Umgebung passt.
 5. **Deploy** wählen. Streamlit erstellt eine öffentliche `*.streamlit.app`-URL, die anschließend in Publikationen und Präsentationen verlinkt werden kann.
 
