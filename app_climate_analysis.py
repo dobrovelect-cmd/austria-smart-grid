@@ -86,11 +86,12 @@ def calculate_heuristic_mix(row):
         return row['Farbe_Netz'], "Basis-Netzmodus", 0.0, 0.0, 0.0, 0, 0
     
     # 1. Vereinfachte Ressourcen- und Vollbenutzungsstunden-Proxies
-    # The wind-hour proxy is a rule-based index, not a simulated energy yield.
-    if row['Wind_ms'] < 4.0:
+    # The wind-hour proxy follows the user-selected screening threshold.
+    # At the default threshold of 4.0 m/s, the baseline results remain unchanged.
+    if row['Wind_ms'] < target_wind:
         vbs_wind = 0.0
     else:
-        vbs_wind = min(3200.0, 1000.0 + (row['Wind_ms'] - 4.0) * 500.0)
+        vbs_wind = min(3200.0, 1000.0 + (row['Wind_ms'] - target_wind) * 500.0)
         
     # GHI [kWh/m²] / reference irradiance [kW/m²] × PR [-] gives equivalent full-load hours [h].
     vbs_solar = (row['Solar_kWh'] / REFERENCE_IRRADIANCE_KW_PER_M2) * PV_PERFORMANCE_RATIO
