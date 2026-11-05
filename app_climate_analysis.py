@@ -68,7 +68,7 @@ def parse_metadata_datetime(metadata):
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed
     except (TypeError, ValueError):
-        return datetime.min.replace(tzinfo=ZoneInfo("Europe/Vienna"))
+        return datetime.min.replace(tzinfo=timezone.utc)
 
 
 def get_capacity_metadata():
