@@ -460,10 +460,10 @@ else:
 # =====================================================================
 if not use_climate_analysis:
     tooltip_html = """
-        <div style='font-family:Arial,sans-serif; box-sizing:border-box; width:280px; max-width:100%;
-                    padding:7px; font-size:12px; line-height:1.3; overflow-wrap:anywhere;'>
-            <b style='font-size:14px; color:#2c3e50;'>{Name}</b>
-            <hr style='margin:5px 0; border:0; border-top:1px solid #ccc;'/>
+        <div style='font-family:Arial,sans-serif; box-sizing:border-box; width:340px; max-width:100%;
+                    padding:10px; font-size:13.5px; line-height:1.4; overflow-wrap:anywhere;'>
+            <b style='font-size:16px; color:#2c3e50;'>{Name}</b>
+            <hr style='margin:6px 0; border:0; border-top:1px solid #ccc;'/>
             <b>Freie Netzkapazität:</b> <span style='color:#27ae60; font-weight:bold;'>{Frei_MVA} MVA</span><br/>
             <b>Gebuchte Kapazität:</b> {Belegt_MVA} MVA<br/>
             <b>Netzbetreiber:</b> {Betreiber}<br/>
@@ -474,29 +474,29 @@ if not use_climate_analysis:
     """
 else:
     tooltip_html = """
-        <div style='font-family:Arial,sans-serif; box-sizing:border-box; width:300px; max-width:100%;
-                    padding:7px; font-size:12px; line-height:1.3; overflow-wrap:anywhere;'>
-            <b style='font-size:14px; color:#2c3e50;'>{Name}</b>
-            <hr style='margin:5px 0; border:0; border-top:1px solid #ccc;'/>
+        <div style='font-family:Arial,sans-serif; box-sizing:border-box; width:360px; max-width:100%;
+                    padding:10px; font-size:13.5px; line-height:1.4; overflow-wrap:anywhere;'>
+            <b style='font-size:16px; color:#2c3e50;'>{Name}</b>
+            <div style='margin:6px 0 8px; padding:8px; background:#f3f5f7; border-left:4px solid #8e44ad; border-radius:4px;'>
+                <div style='font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.3px;'>Empfohlenes Einspeisekonzept</div>
+                <b style='font-size:15px; color:#2c3e50;'>{Strategie}</b>
+                <div style='margin-top:6px;'>🌬️ <b>Wind:</b> <span style='font-size:16px; font-weight:700;'>{WEA_Leistung_MVA} MVA</span></div>
+                <div>☀️ <b>PV:</b> <span style='font-size:16px; font-weight:700;'>{PV_Leistung_MVA} MVA</span></div>
+                <div>🔋 <b>BESS:</b> <span style='font-size:16px; font-weight:700;'>{Speicher_MVA} MVA</span></div>
+            </div>
             <b>Freie Netzkapazität:</b> <span style='color:#27ae60; font-weight:bold;'>{Frei_MVA} MVA</span><br/>
             <b>Gebuchte Kapazität:</b> {Belegt_MVA} MVA<br/>
             <b>Netzbetreiber:</b> {Betreiber} · {Bundesland}<br/>
-            <hr style='margin:5px 0; border:0; border-top:1px solid #eee;'/>
-            <b style='color:#8e44ad;'>Heuristisches Einspeisekonzept</b><br/>
-            <b>Konzept:</b> {Strategie}<br/>
-            <b>Wind-Jahresmittel (2024, 100 m):</b> {Wind_ms} m/s<br/>
+            <hr style='margin:6px 0; border:0; border-top:1px solid #eee;'/>
+            🌬️ <b>Wind-Jahresmittel (2024, 100 m):</b> {Wind_ms} m/s<br/>
             <b>Wind-Schwelle:</b> {Wind_Schwelle_ms} m/s · {Wind_Screening_Status}<br/>
-            <b>Wind-Leistungsanteil:</b> {WEA_Leistung_MVA} MVA<br/>
-            <b>Globalstrahlung:</b> {Solar_kWh} kWh/m²<br/>
-            <b>PV-Leistungsansatz:</b> {PV_Leistung_MVA} MVA<br/>
-            <b>BESS-Leistungsansatz:</b> {Speicher_MVA} MVA<br/>
-            <hr style='margin:5px 0; border:0; border-top:1px solid #eee;'/>
+            ☀️ <b>Globalstrahlung:</b> {Solar_kWh} kWh/m²<br/>
+            <hr style='margin:6px 0; border:0; border-top:1px solid #eee;'/>
             <b>Kontakt:</b> {Kontakt}<br/>
             <b>Webseite:</b> <a href='{Webseite}' target='_blank' style='overflow-wrap:anywhere;'>{Webseite}</a><br/>
-            <span style='font-size:10px; color:#59636e;'>Wind-Screening und Leistungsansätze sind heuristische Indikatoren, keine Ertrags- oder Lastflussberechnung.</span>
+            <span style='font-size:11px; color:#59636e;'>Wind-, PV- und BESS-Leistungsansätze sind heuristische Screening-Werte, keine Ertrags- oder Lastflussberechnung.</span>
         </div>
     """
-
 
 # --- PYDECK MAP ---
 view = pdk.ViewState(latitude=47.6, longitude=13.8, zoom=7, pitch=45)
@@ -504,6 +504,7 @@ view = pdk.ViewState(latitude=47.6, longitude=13.8, zoom=7, pitch=45)
 layer = pdk.Layer(
     "ColumnLayer",
     data=f_df,
+    id="substation-columns",
     get_position="[Länge, Breite]",
     get_elevation="Frei_MVA",
     elevation_scale=col_elevation,
@@ -513,28 +514,88 @@ layer = pdk.Layer(
     auto_highlight=True,
 )
 
-st.pydeck_chart(pdk.Deck(
-    layers=[layer],
-    initial_view_state=view,
-    map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
-    tooltip={
-        "html": tooltip_html,
-        "style": {
-            "backgroundColor": "white",
-            "color": "black",
-            "borderRadius": "5px",
-            "boxShadow": "0px 2px 10px rgba(0,0,0,0.15)",
-            "maxWidth": "320px",
-            "maxHeight": "55vh",
-            "overflowY": "auto",
-            "overflowX": "hidden",
-            "fontSize": "12px",
-            "lineHeight": "1.3",
-            "padding": "7px",
-            "boxSizing": "border-box",
-        }
-    }
-))
+map_epoch = st.session_state.get("substation_map_epoch", 0)
+map_event = st.pydeck_chart(
+    pdk.Deck(
+        layers=[layer],
+        initial_view_state=view,
+        map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+        tooltip={
+            "html": tooltip_html,
+            "style": {
+                "backgroundColor": "white",
+                "color": "black",
+                "borderRadius": "6px",
+                "boxShadow": "0px 2px 10px rgba(0,0,0,0.15)",
+                "maxWidth": "380px",
+                "maxHeight": "65vh",
+                "overflowY": "auto",
+                "overflowX": "hidden",
+                "fontSize": "13.5px",
+                "lineHeight": "1.4",
+                "padding": "10px",
+                "boxSizing": "border-box",
+            },
+        },
+    ),
+    on_select="rerun",
+    selection_mode="single-object",
+    key=f"substation-map-{map_epoch}",
+)
+
+# A click pins the selected station's information below the map. Hover tooltips
+# remain active independently. Incrementing the chart key on close clears the
+# old selection and also allows the same station to be clicked again.
+selected_objects = (
+    map_event.selection.get("objects", {}).get("substation-columns", [])
+    if map_event is not None
+    else []
+)
+if selected_objects:
+    clicked_uid = normalize_uid(selected_objects[0].get("UID"))
+    if clicked_uid:
+        st.session_state["pinned_station_uid"] = clicked_uid
+
+pinned_uid = st.session_state.get("pinned_station_uid")
+if pinned_uid:
+    pinned_matches = f_df[f_df["UID"].map(normalize_uid) == pinned_uid]
+    if not pinned_matches.empty:
+        station = pinned_matches.iloc[0]
+        with st.container(border=True):
+            header_col, close_col = st.columns([5, 1])
+            with header_col:
+                st.markdown(f"#### 📍 {station['Name']}")
+                st.caption(f"{station['Betreiber']} · {station['Bundesland']} · UID {pinned_uid}")
+            with close_col:
+                if st.button("✕ Schließen", key="close-pinned-station", use_container_width=True):
+                    st.session_state["pinned_station_uid"] = None
+                    st.session_state["substation_map_epoch"] = map_epoch + 1
+                    st.rerun()
+
+            if use_climate_analysis:
+                strategy_labels = {
+                    "Hybrides Wind-PV-System + BESS (heuristisch)": "Wind + PV + BESS",
+                    "PV-Anlage + BESS (heuristisch)": "PV + BESS",
+                    "Windpark + BESS (heuristisch)": "Wind + BESS",
+                }
+                strategy_label = strategy_labels.get(station["Strategie"], station["Strategie"])
+                st.markdown(f"**Empfohlenes Einspeisekonzept: {strategy_label}**")
+                wind_col, pv_col, bess_col = st.columns(3)
+                wind_col.metric("🌬️ Wind", f"{station['WEA_Leistung_MVA']:.1f} MVA")
+                pv_col.metric("☀️ PV", f"{station['PV_Leistung_MVA']:.1f} MVA")
+                bess_col.metric("🔋 BESS", f"{station['Speicher_MVA']:.1f} MVA")
+                st.caption(
+                    f"Wind-Jahresmittel: {station['Wind_ms']:.2f} m/s · "
+                    f"Schwelle: {station['Wind_Schwelle_ms']:.1f} m/s · "
+                    f"{station['Wind_Screening_Status']} · "
+                    f"Globalstrahlung: {station['Solar_kWh']:.1f} kWh/m²"
+                )
+            else:
+                st.markdown("**Netzanschlussdaten**")
+            cap_col, booked_col = st.columns(2)
+            cap_col.metric("Freie Netzkapazität", f"{station['Frei_MVA']:.1f} MVA")
+            booked_col.metric("Gebuchte Kapazität", f"{station['Belegt_MVA']:.1f} MVA")
+
 
 # --- TECHNISCHES ANLAGENREGISTER ---
 st.markdown("### 📋 Technisches Anlagenregister")
