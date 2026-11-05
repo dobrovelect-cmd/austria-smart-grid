@@ -25,7 +25,7 @@ cd austria-smart-grid
 Docker-Image erstellen:
 
 ```bash
-docker build -t austria-smart-grid:latest .
+docker build --no-cache -t austria-smart-grid:latest .
 ```
 
 Container starten:
@@ -33,6 +33,8 @@ Container starten:
 ```bash
 docker run --rm --name austria-smart-grid -p 8501:8501 austria-smart-grid:latest
 ```
+
+Der Build prüft beim Erstellen zusätzlich, ob NumPy, pandas, PyArrow und Streamlit gemeinsam importiert werden können. Die Versionen von NumPy und PyArrow sind festgelegt, damit die Streamlit-Tabelle nicht durch eine inkompatible Arrow-Version ausfällt.
 
 Anschließend die Anwendung im Browser öffnen:
 
@@ -50,8 +52,10 @@ Wenn ein neuer CSV-Snapshot auf GitHub veröffentlicht wurde, kann der lokale St
 
 ```bash
 git pull
-docker build -t austria-smart-grid:latest .
+docker build --no-cache -t austria-smart-grid:latest .
 ```
+
+`--no-cache` stellt sicher, dass geänderte Python-Abhängigkeiten neu installiert werden.
 
 Danach den Container wie oben beschrieben erneut starten.
 
