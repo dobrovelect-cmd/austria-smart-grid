@@ -34,6 +34,14 @@ REQUEST_HEADERS = {
 
 st.title("Räumliches Pre-Screening österreichischer Umspannwerke mit veröffentlichter Einspeisekapazität für Wind, PV und BESS")
 
+# Close the floating map card through a lightweight query parameter.
+# The map key is refreshed so the same station can be selected again.
+if st.query_params.get("close_station") == "1":
+    st.session_state["pinned_station_uid"] = None
+    st.session_state["substation_map_epoch"] = int(st.session_state.get("substation_map_epoch", 0)) + 1
+    del st.query_params["close_station"]
+
+
 if not BASE_CSV_FILE.exists():
     st.error("❌ Datenbank nicht gefunden! Bitte sicherstellen, dass substations_climate_base.csv im Projektverzeichnis liegt.")
     st.stop()
@@ -451,10 +459,23 @@ if not use_climate_analysis:
     col3.metric("Durchschn. freie Kapazität", f"{round(f_df['Frei_MVA'].mean(), 1)} MVA" if not f_df.empty else "0 MVA")
 else:
     counts = f_df['Strategie'].value_counts()
-    col1.metric("Wind+BESS-Kandidaten", counts.get("Windpark + BESS (heuristisch)", 0))
-    col2.metric("PV+BESS-Kandidaten", counts.get("PV-Anlage + BESS (heuristisch)", 0))
-    col3.metric("Hybride Kandidaten", counts.get("Hybrides Wind-PV-System + BESS (heuristisch)", 0))
 
+    # These swatches use the exact RGB values of the corresponding map columns.
+    candidate_metrics = [
+        (col1, "Wind+BESS-Kandidaten", counts.get("Windpark + BESS (heuristisch)", 0), "#2980B9"),
+        (col2, "PV+BESS-Kandidaten", counts.get("PV-Anlage + BESS (heuristisch)", 0), "#F1C40F"),
+        (col3, "Hybride Kandidaten", counts.get("Hybrides Wind-PV-System + BESS (heuristisch)", 0), "#9B59B6"),
+    ]
+    for metric_col, label, count, color in candidate_metrics:
+        metric_col.markdown(
+            f'<div style="display:flex;align-items:center;gap:8px;font-weight:600;min-height:24px;">'
+            f'<span style="display:inline-block;width:14px;height:14px;flex:0 0 14px;'
+            f'background:{color};border-radius:3px;border:1px solid rgba(0,0,0,.12);"></span>'
+            f'<span>{label}</span></div>',
+            unsafe_allow_html=True,
+        )
+        metric_col.metric(label="\u00a0", value=count)
+    st.caption("Farben der Markierungen entsprechen den Säulenfarben auf der Karte.")
 # =====================================================================
 # 🎯 TOOLTIP FÜR SCREENING-INDIKATOREN
 # =====================================================================
@@ -544,9 +565,8 @@ map_event = st.pydeck_chart(
     key=f"substation-map-{map_epoch}",
 )
 
-# A click pins the selected station's information below the map. Hover tooltips
-# remain active independently. Incrementing the chart key on close clears the
-# old selection and also allows the same station to be clicked again.
+# A click pins the same station information as a floating card over the map.
+# Unlike the hover tooltip, this card remains visible after the pointer leaves the column.
 selected_objects = (
     map_event.selection.get("objects", {}).get("substation-columns", [])
     if map_event is not None
@@ -562,40 +582,115 @@ if pinned_uid:
     pinned_matches = f_df[f_df["UID"].map(normalize_uid) == pinned_uid]
     if not pinned_matches.empty:
         station = pinned_matches.iloc[0]
-        with st.container(border=True):
-            header_col, close_col = st.columns([5, 1])
-            with header_col:
-                st.markdown(f"#### 📍 {station['Name']}")
-                st.caption(f"{station['Betreiber']} · {station['Bundesland']} · UID {pinned_uid}")
-            with close_col:
-                if st.button("✕ Schließen", key="close-pinned-station", use_container_width=True):
-                    st.session_state["pinned_station_uid"] = None
-                    st.session_state["substation_map_epoch"] = map_epoch + 1
-                    st.rerun()
 
-            if use_climate_analysis:
-                strategy_labels = {
-                    "Hybrides Wind-PV-System + BESS (heuristisch)": "Wind + PV + BESS",
-                    "PV-Anlage + BESS (heuristisch)": "PV + BESS",
-                    "Windpark + BESS (heuristisch)": "Wind + BESS",
-                }
-                strategy_label = strategy_labels.get(station["Strategie"], station["Strategie"])
-                st.markdown(f"**Empfohlenes Einspeisekonzept: {strategy_label}**")
-                wind_col, pv_col, bess_col = st.columns(3)
-                wind_col.metric("🌬️ Wind", f"{station['WEA_Leistung_MVA']:.1f} MVA")
-                pv_col.metric("☀️ PV", f"{station['PV_Leistung_MVA']:.1f} MVA")
-                bess_col.metric("🔋 BESS", f"{station['Speicher_MVA']:.1f} MVA")
-                st.caption(
-                    f"Wind-Jahresmittel: {station['Wind_ms']:.2f} m/s · "
-                    f"Schwelle: {station['Wind_Schwelle_ms']:.1f} m/s · "
-                    f"{station['Wind_Screening_Status']} · "
-                    f"Globalstrahlung: {station['Solar_kWh']:.1f} kWh/m²"
-                )
-            else:
-                st.markdown("**Netzanschlussdaten**")
-            cap_col, booked_col = st.columns(2)
-            cap_col.metric("Freie Netzkapazität", f"{station['Frei_MVA']:.1f} MVA")
-            booked_col.metric("Gebuchte Kapazität", f"{station['Belegt_MVA']:.1f} MVA")
+        def display_number(value, decimals=1):
+            try:
+                return f"{float(value):.{decimals}f}" if pd.notna(value) else "—"
+            except (TypeError, ValueError):
+                return "—"
+
+        strategy_labels = {
+            "Hybrides Wind-PV-System + BESS (heuristisch)": "Wind + PV + BESS",
+            "PV-Anlage + BESS (heuristisch)": "PV + BESS",
+            "Windpark + BESS (heuristisch)": "Wind + BESS",
+            "Geringes Potenzial": "Geringes Potenzial",
+        }
+        strategy_colors = {
+            "Hybrides Wind-PV-System + BESS (heuristisch)": "#9B59B6",
+            "PV-Anlage + BESS (heuristisch)": "#F1C40F",
+            "Windpark + BESS (heuristisch)": "#2980B9",
+            "Geringes Potenzial": "#BDC3C7",
+        }
+
+        station_name = html.escape(str(station.get("Name", "Netzknoten")))
+        station_operator = html.escape(str(station.get("Betreiber", "—")))
+        station_state = html.escape(str(station.get("Bundesland", "—")))
+        strategy = str(station.get("Strategie", "Basis-Netzmodus"))
+        strategy_label = html.escape(strategy_labels.get(strategy, strategy))
+        strategy_color = strategy_colors.get(strategy, "#6B7280")
+        free_capacity = display_number(station.get("Frei_MVA"))
+        booked_capacity = display_number(station.get("Belegt_MVA"))
+        contact = html.escape(str(station.get("Kontakt", "Nicht verfügbar")))
+        website = str(station.get("Webseite", "Nicht verfügbar")).strip()
+        if website and website != "Nicht verfügbar":
+            website_html = (
+                f'<a href="{html.escape(website, quote=True)}" target="_blank" '
+                f'rel="noopener noreferrer" style="overflow-wrap:anywhere;">'
+                f'{html.escape(website)}</a>'
+            )
+        else:
+            website_html = "Nicht verfügbar"
+
+        recommendation_html = ""
+        climate_html = ""
+        if use_climate_analysis:
+            recommendation_html = f"""
+                <div style="margin:8px 0 9px;padding:9px;background:#f3f5f7;
+                            border-left:4px solid {strategy_color};border-radius:5px;">
+                    <div style="font-size:10px;color:#6b7280;text-transform:uppercase;
+                                letter-spacing:.35px;margin-bottom:3px;">
+                        Empfohlenes Einspeisekonzept
+                    </div>
+                    <div style="font-size:16px;font-weight:700;color:#263445;margin-bottom:7px;">
+                        {strategy_label}
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+                        <div style="min-width:0;">🌬️ <b>Wind</b><br/>
+                            <span style="font-size:16px;font-weight:700;">{display_number(station.get("WEA_Leistung_MVA"))} MVA</span></div>
+                        <div style="min-width:0;">☀️ <b>PV</b><br/>
+                            <span style="font-size:16px;font-weight:700;">{display_number(station.get("PV_Leistung_MVA"))} MVA</span></div>
+                        <div style="min-width:0;">🔋 <b>BESS</b><br/>
+                            <span style="font-size:16px;font-weight:700;">{display_number(station.get("Speicher_MVA"))} MVA</span></div>
+                    </div>
+                </div>
+            """
+            climate_html = f"""
+                <hr style="margin:7px 0;border:0;border-top:1px solid #e5e7eb;"/>
+                🌬️ <b>Wind-Jahresmittel (2024, 100 m):</b> {display_number(station.get("Wind_ms"), 2)} m/s<br/>
+                <b>Wind-Schwelle:</b> {display_number(station.get("Wind_Schwelle_ms"))} m/s ·
+                {html.escape(str(station.get("Wind_Screening_Status", "—")))}<br/>
+                ☀️ <b>Globalstrahlung:</b> {display_number(station.get("Solar_kWh"))} kWh/m²<br/>
+            """
+
+        pinned_panel_html = f"""
+            <div style="position:fixed;top:clamp(210px,29vh,290px);right:24px;
+                        z-index:999999;width:360px;max-width:calc(100vw - 32px);
+                        max-height:62vh;overflow-y:auto;overflow-x:hidden;
+                        box-sizing:border-box;padding:12px 13px 11px;
+                        background:#ffffff;color:#202733;border:1px solid #d5dbe3;
+                        border-left:4px solid {strategy_color};border-radius:9px;
+                        box-shadow:0 8px 28px rgba(15,23,42,.24);
+                        font-family:Arial,sans-serif;font-size:13px;line-height:1.42;
+                        overflow-wrap:anywhere;">
+                <a href="?close_station=1" title="Fenster schließen"
+                   style="position:absolute;right:10px;top:7px;text-decoration:none;
+                          color:#59636e;font-size:21px;font-weight:500;line-height:1;">
+                    ×
+                </a>
+                <div style="padding-right:24px;font-size:17px;font-weight:700;color:#263445;">
+                    📍 {station_name}
+                </div>
+                <div style="font-size:11px;color:#6b7280;margin-top:2px;">
+                    {station_operator} · {station_state} · UID {html.escape(str(pinned_uid))}
+                </div>
+                {recommendation_html}
+                <b>Freie Netzkapazität:</b>
+                <span style="color:#218c50;font-weight:700;">{free_capacity} MVA</span><br/>
+                <b>Gebuchte Kapazität:</b> {booked_capacity} MVA
+                {climate_html}
+                <hr style="margin:7px 0;border:0;border-top:1px solid #e5e7eb;"/>
+                <b>Kontakt:</b> {contact}<br/>
+                <b>Webseite:</b> {website_html}
+                <div style="font-size:10px;color:#697586;margin-top:7px;line-height:1.3;">
+                    Wind-, PV- und BESS-Leistungsansätze sind heuristische Screening-Werte,
+                    keine Ertrags- oder Lastflussberechnung.
+                </div>
+            </div>
+        """
+        st.markdown(pinned_panel_html, unsafe_allow_html=True)
+    else:
+        # The selected point may have been removed by a filter change.
+        st.session_state["pinned_station_uid"] = None
 
 
 # --- TECHNISCHES ANLAGENREGISTER ---
