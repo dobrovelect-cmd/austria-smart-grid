@@ -90,7 +90,7 @@ def calculate_heuristic_mix(row):
     # Wind is checked against the selected threshold using the annual modelled mean
     # at 100 m. The resulting dimensionless score is only a heuristic allocation
     # weight; it is NOT wind full-load hours or an energy-yield estimate.
-    if row['Wind_ms'] < target_wind:
+    if pd.isna(row['Wind_ms']) or row['Wind_ms'] < target_wind:
         wind_weight_score = 0.0
     else:
         wind_weight_score = min(
@@ -205,7 +205,7 @@ else:
                 💨 Wind-Leistungsansatz im Screening: <b>{WEA_Leistung_MVA} MVA</b> (heuristischer Ansatz)<br/>
                 ☀️ PV-Leistungsansatz: <b>{PV_Leistung_MVA} MVA</b> (PV-Äquivalentstunden-Proxy: {VBS_Solar_h} h/a)<br/>
                 🔋 <b>Angesetzte BESS-Leistung: {Speicher_MVA} MVA</b> (heuristischer Wert)<br/>
-                <span style='font-size:11px; color:#59636e;'>Hinweis: Die Windprüfung ist eine Schwellenwertprüfung, keine Berechnung von Wind-Volllaststunden oder Stromertrag.</span>
+                <span style='font-size:11px; color:#59636e;'>Hinweis: „Unterhalb der Schwelle“ bedeutet nur, dass im Screening kein Wind-Leistungsanteil angesetzt wird. Es ist keine Aussage, dass die tatsächliche Windstromerzeugung null ist. Die Windprüfung berechnet weder Volllaststunden noch Stromertrag.</span>
             </div>
             
             <hr style='margin:6px 0; border: 0; border-top: 1px solid #eee;'/>
