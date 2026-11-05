@@ -9,6 +9,9 @@ ENV PYTHONUNBUFFERED=1
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Fail the image build early if the dataframe/Arrow stack is incompatible.
+RUN python -c "import numpy, pandas, pyarrow, streamlit; print('Dependency check:', 'numpy', numpy.__version__, 'pandas', pandas.__version__, 'pyarrow', pyarrow.__version__, 'streamlit', streamlit.__version__)"
+
 # The dashboard uses the committed CSV snapshot and does not fetch data at startup.
 COPY app_climate_analysis.py ./
 COPY substations_climate_base.csv ./
