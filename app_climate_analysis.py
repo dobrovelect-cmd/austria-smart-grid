@@ -84,7 +84,7 @@ def calculate_heuristic_mix(row):
     S = row['Frei_MVA']
     
     if not use_climate_analysis:
-        return row['Farbe_Netz'], "Basis-Netzmodus", 0.0, 0.0, 0.0, 0, 0
+        return row['Farbe_Netz'], "Basis-Netzmodus", 0.0, 0.0, 0.0, 0
     
     # 1. Vereinfachte Ressourcenindikatoren
     # Wind is checked against the selected threshold using the annual modelled mean
