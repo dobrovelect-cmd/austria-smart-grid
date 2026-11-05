@@ -202,7 +202,7 @@ else:
                 <b>Konzept:</b> <span style='color:#2c3e50; font-weight:bold;'>{Strategie}</span><br/>
                 💨 Wind-Jahresmittel (Modellwert 2024, 100 m): <b>{Wind_ms} m/s</b><br/>
                 <b>Wind-Screening-Schwelle:</b> {Wind_Schwelle_ms} m/s — <b>{Wind_Screening_Status}</b><br/>
-                💨 Wind-Leistungsansatz im Screening: <b>{WEA_Leistung_MVA} MVA</b> (heuristischer Ansatz)<br/>
+                💨 Im Screening angesetzter Wind-Leistungsanteil: <b>{WEA_Leistung_MVA} MVA</b> (heuristische Anschlussleistungszuordnung)<br/>
                 ☀️ PV-Leistungsansatz: <b>{PV_Leistung_MVA} MVA</b> (PV-Äquivalentstunden-Proxy: {VBS_Solar_h} h/a)<br/>
                 🔋 <b>Angesetzte BESS-Leistung: {Speicher_MVA} MVA</b> (heuristischer Wert)<br/>
                 <span style='font-size:11px; color:#59636e;'>Hinweis: „Unterhalb der Schwelle“ bedeutet nur, dass im Screening kein Wind-Leistungsanteil angesetzt wird. Es ist keine Aussage, dass die tatsächliche Windstromerzeugung null ist. Die Windprüfung berechnet weder Volllaststunden noch Stromertrag.</span>
