@@ -38,16 +38,33 @@ df = load_data()
 # =====================================================================
 # 🎛️ BLOCK 1: BASIS-NETZFILTER
 # =====================================================================
-st.sidebar.header("🎛️ Basis-Netzfilter")
-
 all_states = sorted(df["Bundesland"].dropna().unique())
-selected_states = st.sidebar.multiselect("Bundesland auswählen", all_states, default=all_states)
-
 all_operators = sorted(df["Betreiber"].dropna().unique())
-selected_operators = st.sidebar.multiselect("Netzbetreiber auswählen", all_operators, default=all_operators)
-
 min_v, max_v = float(df["Frei_MVA"].min()), float(df["Frei_MVA"].max())
-range_mva = st.sidebar.slider("Verfügbare Netzkapazität (MVA)", min_v, max_v, (0.0, max_v))
+
+# Keep the basic filters in one collapsed panel to preserve sidebar space.
+with st.sidebar.expander("🎛️ Basis-Netzfilter", expanded=False):
+    st.caption("Bundesländer im Dropdown mehrfach auswählen oder abwählen.")
+    selected_states = st.multiselect(
+        "Bundesländer",
+        options=all_states,
+        default=all_states,
+        help="Dropdown öffnen und einzelne Bundesländer an- oder abwählen. Standardmäßig sind alle ausgewählt."
+    )
+
+    selected_operators = st.multiselect(
+        "Netzbetreiber",
+        options=all_operators,
+        default=all_operators,
+        help="Mehrfachauswahl. Standardmäßig sind alle Netzbetreiber ausgewählt."
+    )
+
+    range_mva = st.slider(
+        "Verfügbare Netzkapazität (MVA)",
+        min_value=min_v,
+        max_value=max_v,
+        value=(0.0, max_v)
+    )
 
 # =====================================================================
 # 🌤️ BLOCK 2: HEURISTISCHE RESSOURCENINDIKATOREN
