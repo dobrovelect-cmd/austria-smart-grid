@@ -1,6 +1,8 @@
 # SMART Grid Austria & Speicher AI
 
-Intelligentes Monitoring-Tool zur räumlichen Vorauswahl österreichischer Netzknoten für Windenergie, Photovoltaik und Batteriespeicher (BESS).
+Räumliches Pre-Screening österreichischer Umspannwerke mit veröffentlichter Einspeisekapazität für Windenergie, Photovoltaik und Batteriespeicher (BESS).
+
+**Hinweis zur Spannungsebene:** Die EbUtilities-Datenquelle veröffentlicht verfügbare und gebuchte Einspeisekapazitäten je Umspannwerk, stellt in dem von diesem Projekt verwendeten Datensatz jedoch kein eigenes Feld zur Spannungsebene bereit. Einige Stationsnamen enthalten explizite Angaben wie 6, 10, 20, 25 oder 30 kV. Daher wird die Gesamtheit der Datensätze nicht pauschal als ausschließlich hochspannungsseitig klassifiziert. Eine belastbare Filterung nach Spannungsebene erfordert ein zusätzliches, stationsbezogenes Spannungsattribut.
 
 ## Lokaler Start mit Docker (empfohlen)
 
@@ -59,7 +61,7 @@ Der erfolgreiche Aktualisierungszeitpunkt wird in österreichischer Lokalzeit an
 
 ### Technisches Anlagenregister
 
-Die Haupttabelle zeigt kompakt die Netzknoten-ID, den Namen, das Bundesland, freie und belegte Kapazität sowie die wichtigsten Screening-Ergebnisse. Weitere Angaben (z. B. Netzbetreiber, Kontakt, Webseite, Koordinaten, Globalstrahlung und PV-Äquivalentstunden-Proxy) können über **„Weitere technische Angaben, Kontakte und Koordinaten anzeigen“** eingeblendet werden.
+Die Tabelle zeigt in einer einzigen Ansicht UID, Netzknoten, Bundesland, Netzbetreiber, freie und gebuchte Kapazität sowie Globalstrahlung und – bei aktivierter heuristischer Ressourcenanalyse – Wind-Screening und Strategie. Es gibt keinen separaten aufklappbaren Detailbereich.
 
 ### Aktualisierung des lokalen Datenstands
 
