@@ -538,6 +538,7 @@ map_event = st.pydeck_chart(
             },
         },
     ),
+    use_container_width=True,
     on_select="rerun",
     selection_mode="single-object",
     key=f"substation-map-{map_epoch}",
