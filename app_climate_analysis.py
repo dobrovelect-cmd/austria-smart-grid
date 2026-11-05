@@ -106,7 +106,9 @@ def atomic_write_json(path, payload):
 
 def refresh_network_capacities():
     """Refresh only grid-capacity values; keep climate data unchanged."""
-    base_df = pd.read_csv(BASE_CSV_FILE)
+    # Start from the currently applied dataset so missing bookedCapacity values
+    # preserve the last known value rather than reverting to the bundled CSV.
+    base_df = load_data()
     base_df["_UID_key"] = base_df["UID"].map(normalize_uid)
     if base_df["_UID_key"].isna().any() or base_df["_UID_key"].duplicated().any():
         raise RuntimeError("Der lokale CSV-Snapshot enthält fehlende oder doppelte UID-Werte.")
