@@ -1,6 +1,9 @@
+import json
 import os
 import time
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
@@ -13,6 +16,7 @@ REQUEST_HEADERS = {"User-Agent": "SMART-Grid-Austria/1.0 (research data collecti
 BATCH_SIZE = 10
 REQUEST_DELAY_SECONDS = 0.5
 OUTPUT_FILE = Path("substations_climate_base.csv")
+METADATA_OUTPUT_FILE = Path("dataset_metadata.json")
 
 # Retry temporary API failures and honour Retry-After responses.
 retry_policy = Retry(
@@ -273,6 +277,19 @@ def main():
     temporary_file = OUTPUT_FILE.with_suffix(OUTPUT_FILE.suffix + ".tmp")
     df.to_csv(temporary_file, index=False, encoding="utf-8")
     os.replace(temporary_file, OUTPUT_FILE)
+
+    # Record the exact Austrian-local timestamp of the bundled network-capacity snapshot.
+    snapshot_metadata = {
+        "updated_at": datetime.now(ZoneInfo("Europe/Vienna")).isoformat(timespec="minutes"),
+        "precision": "minute",
+        "source": "EbUtilities API",
+        "records": len(df),
+    }
+    temporary_metadata = METADATA_OUTPUT_FILE.with_suffix(".json.tmp")
+    with temporary_metadata.open("w", encoding="utf-8") as handle:
+        json.dump(snapshot_metadata, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+    os.replace(temporary_metadata, METADATA_OUTPUT_FILE)
 
     print(
         f"✅ CSV erfolgreich erstellt: {len(df)} Netzknoten; "
