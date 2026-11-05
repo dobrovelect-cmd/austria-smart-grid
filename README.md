@@ -57,6 +57,10 @@ Die Aktualisierung wird nur gespeichert, wenn für alle Netzknoten des lokalen C
 
 Der erfolgreiche Aktualisierungszeitpunkt wird in österreichischer Lokalzeit angezeigt und im Docker-Volume gespeichert. Wind- und Solardaten werden durch diese Schaltfläche nicht verändert. Sie bleiben Teil des separaten Klima-Snapshots.
 
+### Technisches Anlagenregister
+
+Die Haupttabelle zeigt kompakt die Netzknoten-ID, den Namen, das Bundesland, freie und belegte Kapazität sowie die wichtigsten Screening-Ergebnisse. Weitere Angaben (z. B. Netzbetreiber, Kontakt, Webseite, Koordinaten, Globalstrahlung und PV-Äquivalentstunden-Proxy) können über **„Weitere technische Angaben, Kontakte und Koordinaten anzeigen“** eingeblendet werden.
+
 ### Aktualisierung des lokalen Datenstands
 
 Die vollständige Aktualisierung des Datensatzes erfolgt separat über GitHub Actions (siehe Abschnitt „Vollständige Aktualisierung des Datensatzes“ weiter unten).
