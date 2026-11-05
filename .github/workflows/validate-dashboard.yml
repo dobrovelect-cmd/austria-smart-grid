@@ -1,0 +1,54 @@
+name: Validate dashboard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install application dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check Python syntax
+        run: python -m py_compile app_climate_analysis.py fetch_climate_data.py
+
+      - name: Validate metadata and dataset structure
+        run: |
+          python -m json.tool dataset_metadata.json > /dev/null
+          python - <<'PY'
+          import pandas as pd
+
+          df = pd.read_csv("substations_climate_base.csv")
+          required = {
+              "UID", "Name", "Frei_MVA", "Belegt_MVA",
+              "Bundesland", "Betreiber", "Wind_ms", "Solar_kWh"
+          }
+          missing = required.difference(df.columns)
+          if missing:
+              raise SystemExit(f"Missing dataset columns: {sorted(missing)}")
+          if df["UID"].isna().any() or df["UID"].duplicated().any():
+              raise SystemExit("UID values must be present and unique")
+          if df[["Frei_MVA", "Belegt_MVA", "Wind_ms", "Solar_kWh"]].isna().any().any():
+              raise SystemExit("Required capacity or climate values are missing")
+          print(f"Validated {len(df)} network nodes.")
+          PY
