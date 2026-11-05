@@ -63,6 +63,12 @@ Der erfolgreiche Aktualisierungszeitpunkt wird in österreichischer Lokalzeit an
 
 Die Tabelle zeigt in einer einzigen Ansicht UID, Netzknoten, Bundesland, Netzbetreiber, freie und gebuchte Kapazität sowie Globalstrahlung und – bei aktivierter heuristischer Ressourcenanalyse – Wind-Screening und Strategie. Es gibt keinen separaten aufklappbaren Detailbereich.
 
+### Interaktion mit der Karte
+
+Beim Überfahren eines Netzknotens erscheint weiterhin eine kompakte Hover-Information. Ein Klick auf einen Netzknoten öffnet zusätzlich eine dauerhaft sichtbare Detailkarte unterhalb der Karte. Sie bleibt geöffnet, bis **„Schließen“** betätigt wird. Die Karte zeigt zuerst das heuristische Einspeisekonzept und die drei Leistungsansätze für Wind, PV und BESS mit Symbolen. Die Hover-Information bleibt unabhängig davon verfügbar.
+
+Für die Klickauswahl der PyDeck-Karte wird Streamlit 1.40.0 oder neuer benötigt; im Projekt ist Streamlit 1.40.0 festgesetzt.
+
 ### Aktualisierung des lokalen Datenstands
 
 Die vollständige Aktualisierung des Datensatzes erfolgt separat über GitHub Actions (siehe Abschnitt „Vollständige Aktualisierung des Datensatzes“ weiter unten).
