@@ -273,29 +273,34 @@ all_states = sorted(df["Bundesland"].dropna().unique())
 all_operators = sorted(df["Betreiber"].dropna().unique())
 min_v, max_v = float(df["Frei_MVA"].min()), float(df["Frei_MVA"].max())
 
-# Keep the basic filters in one collapsed panel to preserve sidebar space.
+# Region and operator selectors remain in a compact collapsed panel.
 with st.sidebar.expander("🎛️ Basis-Netzfilter", expanded=False):
-    st.caption("Bundesländer im Dropdown mehrfach auswählen oder abwählen.")
+    st.caption("Bundesländer und Netzbetreiber können mehrfach ausgewählt werden.")
     selected_states = st.multiselect(
         "Bundesländer",
         options=all_states,
         default=all_states,
-        help="Dropdown öffnen und einzelne Bundesländer an- oder abwählen. Standardmäßig sind alle ausgewählt."
+        help="Dropdown öffnen und einzelne Bundesländer an- oder abwählen."
     )
-
     selected_operators = st.multiselect(
         "Netzbetreiber",
         options=all_operators,
         default=all_operators,
-        help="Mehrfachauswahl. Standardmäßig sind alle Netzbetreiber ausgewählt."
+        help="Dropdown öffnen und einzelne Netzbetreiber an- oder abwählen."
     )
 
-    range_mva = st.slider(
-        "Verfügbare Netzkapazität (MVA)",
-        min_value=min_v,
-        max_value=max_v,
-        value=(0.0, max_v)
-    )
+# Capacity filter stays visible even when Basis-Netzfilter is collapsed.
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Verfügbare Netzkapazität (MVA)**")
+range_mva = st.sidebar.slider(
+    "Bereich der freien Kapazität",
+    min_value=min_v,
+    max_value=max_v,
+    value=(min_v, max_v),
+    key="available_capacity_range",
+    label_visibility="collapsed",
+    help="Filtert nach der aktuell angezeigten freien Netzanschlusskapazität."
+)
 
 # =====================================================================
 # 🌤️ BLOCK 2: HEURISTISCHE RESSOURCENINDIKATOREN
@@ -488,23 +493,44 @@ st.pydeck_chart(pdk.Deck(
     }
 ))
 
-# --- ANLAGENREGISTER (TABELLE) ---
-st.markdown("### 📋 Technisches Anlagenregister (Exportbereit)")
+# --- ANLAGENREGISTER: COMPACT MAIN TABLE + OPTIONAL DETAILS ---
+st.markdown("### 📋 Technisches Anlagenregister")
+
 if not f_df.empty:
-    columns_to_drop = ["Farbe_Netz", "Finale_Farbe", "Breite", "Länge"]
-    if not use_climate_analysis:
-        columns_to_drop += ["Strategie", "WEA_Leistung_MVA", "PV_Leistung_MVA", "Speicher_MVA", "VBS_Solar_h"]
-
-    display_df = f_df.drop(columns=columns_to_drop)
+    # Keep the first view focused on the node identity, capacities and screening outcome.
+    main_columns = [
+        "UID", "Name", "Bundesland", "Frei_MVA", "Belegt_MVA"
+    ]
     if use_climate_analysis:
-        display_df = display_df.rename(columns={
-            "Wind_ms": "Wind-Jahresmittel @ 100 m (m/s)",
-            "Solar_kWh": "Globalstrahlung (kWh/m²)",
-            "Wind_Screening_Status": "Wind-Screening",
-            "Wind_Schwelle_ms": "Wind-Schwelle (m/s)",
-            "VBS_Solar_h": "PV-Äquivalentstunden-Proxy (h/a)",
-        })
+        main_columns += [
+            "Wind_ms", "Wind_Screening_Status", "Strategie"
+        ]
+    else:
+        main_columns += ["Betreiber"]
 
-    st.dataframe(display_df, use_container_width=True)
+    main_df = f_df[main_columns].copy()
+    main_df = main_df.rename(columns={
+        "Name": "Netzknoten",
+        "Frei_MVA": "Frei (MVA)",
+        "Belegt_MVA": "Belegt (MVA)",
+        "Wind_ms": "Wind @100 m (m/s)",
+        "Wind_Screening_Status": "Wind-Screening",
+    })
+    st.dataframe(
+        main_df,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    detail_columns = [column for column in f_df.columns if column not in main_columns]
+    with st.expander("Weitere technische Angaben, Kontakte und Koordinaten anzeigen", expanded=False):
+        if detail_columns:
+            details_df = f_df[detail_columns].copy()
+            details_df = details_df.rename(columns={
+                "Solar_kWh": "Globalstrahlung (kWh/m²)",
+                "Wind_Schwelle_ms": "Wind-Schwelle (m/s)",
+                "VBS_Solar_h": "PV-Äquivalentstunden-Proxy (h/a)",
+            })
+            st.dataframe(details_df, use_container_width=True, hide_index=True)
 else:
     st.info("Keine Umspannwerke entsprechen den gewählten Filterkriterien.")
