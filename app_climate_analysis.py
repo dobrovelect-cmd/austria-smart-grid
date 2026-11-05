@@ -460,22 +460,15 @@ if not use_climate_analysis:
 else:
     counts = f_df['Strategie'].value_counts()
 
-    # These swatches use the exact RGB values of the corresponding map columns.
+    # Colored square markers match the corresponding ColumnLayer colors.
     candidate_metrics = [
-        (col1, "Wind+BESS-Kandidaten", counts.get("Windpark + BESS (heuristisch)", 0), "#2980B9"),
-        (col2, "PV+BESS-Kandidaten", counts.get("PV-Anlage + BESS (heuristisch)", 0), "#F1C40F"),
-        (col3, "Hybride Kandidaten", counts.get("Hybrides Wind-PV-System + BESS (heuristisch)", 0), "#9B59B6"),
+        (col1, "🟦 Wind+BESS-Kandidaten", counts.get("Windpark + BESS (heuristisch)", 0)),
+        (col2, "🟨 PV+BESS-Kandidaten", counts.get("PV-Anlage + BESS (heuristisch)", 0)),
+        (col3, "🟪 Hybride Kandidaten", counts.get("Hybrides Wind-PV-System + BESS (heuristisch)", 0)),
     ]
-    for metric_col, label, count, color in candidate_metrics:
-        metric_col.markdown(
-            f'<div style="display:flex;align-items:center;gap:8px;font-weight:600;min-height:24px;">'
-            f'<span style="display:inline-block;width:14px;height:14px;flex:0 0 14px;'
-            f'background:{color};border-radius:3px;border:1px solid rgba(0,0,0,.12);"></span>'
-            f'<span>{label}</span></div>',
-            unsafe_allow_html=True,
-        )
-        metric_col.metric(label="\u00a0", value=count)
-    st.caption("Farben der Markierungen entsprechen den Säulenfarben auf der Karte.")
+    for metric_col, label, count in candidate_metrics:
+        metric_col.metric(label=label, value=count)
+    st.caption("🟦 Blau = Wind + BESS · 🟨 Gelb = PV + BESS · 🟪 Violett = Wind + PV + BESS. Farben entsprechen Säulen auf der Karte.")
 # =====================================================================
 # 🎯 TOOLTIP FÜR SCREENING-INDIKATOREN
 # =====================================================================
@@ -687,7 +680,9 @@ if pinned_uid:
                 </div>
             </div>
         """
-        st.markdown(pinned_panel_html, unsafe_allow_html=True)
+        # Render as raw HTML in the app DOM. st.markdown would parse nested
+        # indented HTML fragments as Markdown code blocks in this panel.
+        st.html(pinned_panel_html)
     else:
         # The selected point may have been removed by a filter change.
         st.session_state["pinned_station_uid"] = None
