@@ -4,3 +4,4 @@ numpy==1.26.4
 pyarrow==19.0.1
 pydeck>=0.8.0
 requests==2.31.0
+pytz>=2024.1
