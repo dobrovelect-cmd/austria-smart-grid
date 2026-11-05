@@ -3,7 +3,8 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
+
+import pytz
 
 import pandas as pd
 import requests
@@ -280,7 +281,7 @@ def main():
 
     # Record the exact Austrian-local timestamp of the bundled network-capacity snapshot.
     snapshot_metadata = {
-        "updated_at": datetime.now(ZoneInfo("Europe/Vienna")).isoformat(timespec="minutes"),
+        "updated_at": datetime.now(pytz.timezone("Europe/Vienna")).isoformat(timespec="minutes"),
         "precision": "minute",
         "source": "EbUtilities API",
         "records": len(df),
