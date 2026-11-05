@@ -1,3 +1,4 @@
+import html
 import json
 import math
 import os
@@ -10,7 +11,7 @@ import pytz
 import requests
 import streamlit as st
 
-st.set_page_config(page_title="Räumliches Pre-Screening Österreich", layout="wide")
+st.set_page_config(page_title="Pre-Screening österreichischer Umspannwerke", layout="wide")
 
 # Screening-Proxies (keine standortspezifische Ertragssimulation).
 PV_PERFORMANCE_RATIO = 0.85
@@ -31,7 +32,7 @@ REQUEST_HEADERS = {
     "Accept": "application/json",
 }
 
-st.title("Räumliches Pre-Screening österreichischer Netzknoten für Wind, PV und BESS")
+st.title("Räumliches Pre-Screening österreichischer Umspannwerke für Wind, PV und BESS")
 
 if not BASE_CSV_FILE.exists():
     st.error("❌ Datenbank nicht gefunden! Bitte sicherstellen, dass substations_climate_base.csv im Projektverzeichnis liegt.")
@@ -226,7 +227,7 @@ def format_capacity_metadata(metadata):
     value = metadata.get("updated_at", "unbekannt")
     if metadata.get("precision") == "date":
         try:
-            return datetime.fromisoformat(value).strftime("%d.%m.%Y") + " (nur Datum verfügbar)"
+            return datetime.fromisoformat(value).strftime("%d.%m.%Y")
         except ValueError:
             return value
     return parse_metadata_datetime(metadata).strftime("%d.%m.%Y, %H:%M")
@@ -239,12 +240,14 @@ status_col, button_col = st.columns([2.2, 1.0])
 capacity_metadata = get_capacity_metadata()
 with status_col:
     source_label = capacity_metadata.get("source", "unbekannte Quelle")
-    st.markdown(
-        f"**Datenstand der freien Netzkapazitäten:** {format_capacity_metadata(capacity_metadata)}"
-    )
-    st.caption(
+    source_help = html.escape(
         f"Quelle: {source_label}. Aktualisiert werden freie und belegte Netzkapazitäten; "
         "Klimadaten bleiben unverändert."
+    )
+    st.markdown(
+        f'**Datenstand der freien Netzkapazitäten:** {format_capacity_metadata(capacity_metadata)} '
+        f'<span title="{source_help}" style="color:#6b7280; cursor:help;">ⓘ</span>',
+        unsafe_allow_html=True,
     )
 with button_col:
     if st.button("↻ Netzkapazitäten aktualisieren", type="primary", use_container_width=True):
@@ -323,10 +326,24 @@ with st.sidebar.expander("🌤️ Heuristische Ressourcenanalyse", expanded=True
     use_climate_analysis = st.checkbox("Heuristische Aufteilung aktivieren", value=True)
     
     st.markdown("**Screening-Schwellenwerte:**")
-    target_wind = st.slider("Min. Windgeschwindigkeit auf 100 m (m/s)", 3.5, 8.5, 4.0, 0.1)
-    target_solar = st.slider("Min. Sonneneinstrahlung (kWh/m²)", 950, 1350, 950, 25)
-    st.caption("Wind-Screening: Vergleich des modellierten Jahresmittels der Windgeschwindigkeit in 100 m mit dem gewählten Schwellenwert. Keine Berechnung von Wind-Volllaststunden oder Windstromertrag.")
-    st.caption("PV-Äquivalentstunden-Proxy: Globalstrahlung / 1 kW/m² × PR 0,85; keine standortspezifische Ertragssimulation.")
+    target_wind = st.slider(
+        "Min. Windgeschwindigkeit auf 100 m (m/s)",
+        3.5, 8.5, 4.0, 0.1,
+        help=(
+            "Wind-Screening: Vergleich des modellierten Jahresmittels der Windgeschwindigkeit "
+            "in 100 m mit dem gewählten Schwellenwert. Dies ist keine Berechnung von "
+            "Wind-Volllaststunden oder Windstromertrag."
+        ),
+    )
+    target_solar = st.slider(
+        "Min. Sonneneinstrahlung (kWh/m²)",
+        950, 1350, 950, 25,
+        help=(
+            "PV-Äquivalentstunden-Proxy: Globalstrahlung / 1 kW/m² × PR 0,85. "
+            "Der Faktor 0,85 ist ein vereinfachter Performance-Ratio-Ansatz; "
+            "dies ist keine standortspezifische Ertragssimulation."
+        ),
+    )
 
 # =====================================================================
 # 📐 BLOCK 3: 3D-SKALIERUNG
@@ -443,43 +460,43 @@ else:
 # =====================================================================
 if not use_climate_analysis:
     tooltip_html = """
-        <div style='font-family: sans-serif; padding: 12px; line-height: 1.6; min-width: 250px;'>
-            <b style='font-size:16px; color: #2c3e50;'>{Name}</b><br/>
-            <hr style='margin:6px 0; border: 0; border-top: 1px solid #ccc;'/>
-            <b>Verfügbare Netzkapazität:</b> <span style='font-size: 15px; color: #27ae60; font-weight: bold;'>{Frei_MVA} MVA</span><br/>
-            <b>Belegte / Reservierte Leistung:</b> {Belegt_MVA} MVA<br/>
-            <hr style='margin:6px 0; border: 0; border-top: 1px solid #eee;'/>
+        <div style='font-family:Arial,sans-serif; box-sizing:border-box; width:280px; max-width:100%;
+                    padding:7px; font-size:12px; line-height:1.3; overflow-wrap:anywhere;'>
+            <b style='font-size:14px; color:#2c3e50;'>{Name}</b>
+            <hr style='margin:5px 0; border:0; border-top:1px solid #ccc;'/>
+            <b>Freie Netzkapazität:</b> <span style='color:#27ae60; font-weight:bold;'>{Frei_MVA} MVA</span><br/>
+            <b>Gebuchte Kapazität:</b> {Belegt_MVA} MVA<br/>
             <b>Netzbetreiber:</b> {Betreiber}<br/>
-            <b>Region:</b> {Bundesland}<br/>
-            <b>Kontakt:</b> <span style='color:#e67e22;'>{Kontakt}</span><br/>
-            <b>Webseite:</b> <a href='{Webseite}' target='_blank' style='color:#2980b9; text-decoration:none;'>{Webseite}</a>
+            <b>Bundesland:</b> {Bundesland}<br/>
+            <b>Kontakt:</b> {Kontakt}<br/>
+            <b>Webseite:</b> <a href='{Webseite}' target='_blank' style='overflow-wrap:anywhere;'>{Webseite}</a>
         </div>
     """
 else:
     tooltip_html = """
-        <div style='font-family: sans-serif; padding: 12px; line-height: 1.6; min-width: 340px;'>
-            <b style='font-size:16px; color: #2c3e50;'>{Name}</b><br/>
-            <hr style='margin:6px 0; border: 0; border-top: 1px solid #ccc;'/>
-            <b>Netzanschlussleistung (Limit):</b> <span style='color:#27ae60; font-weight:bold;'>{Frei_MVA} MVA</span><br/>
-            <b>Belegte / Reservierte Leistung:</b> {Belegt_MVA} MVA<br/>
-            
-            <div style='background-color: #f8f9fa; padding: 8px; border-radius: 4px; margin-top: 5px; border-left: 4px solid #8e44ad;'>
-                <b style='color:#8e44ad; font-size:13px;'>📈 Heuristisches Einspeisekonzept:</b><br/>
-                <b>Konzept:</b> <span style='color:#2c3e50; font-weight:bold;'>{Strategie}</span><br/>
-                💨 Wind-Jahresmittel (Modellwert 2024, 100 m): <b>{Wind_ms} m/s</b><br/>
-                <b>Wind-Screening-Schwelle:</b> {Wind_Schwelle_ms} m/s — <b>{Wind_Screening_Status}</b><br/>
-                💨 Im Screening angesetzter Wind-Leistungsanteil: <b>{WEA_Leistung_MVA} MVA</b> (heuristische Anschlussleistungszuordnung)<br/>
-                ☀️ PV-Leistungsansatz: <b>{PV_Leistung_MVA} MVA</b> (PV-Äquivalentstunden-Proxy: {VBS_Solar_h} h/a)<br/>
-                🔋 <b>Angesetzte BESS-Leistung: {Speicher_MVA} MVA</b> (heuristischer Wert)<br/>
-                <span style='font-size:11px; color:#59636e;'>Hinweis: „Unterhalb der Schwelle“ bedeutet nur, dass im Screening kein Wind-Leistungsanteil angesetzt wird. Es ist keine Aussage, dass die tatsächliche Windstromerzeugung null ist. Die Windprüfung berechnet weder Volllaststunden noch Stromertrag.</span>
-            </div>
-            
-            <hr style='margin:6px 0; border: 0; border-top: 1px solid #eee;'/>
-            <b>Netzbetreiber:</b> {Betreiber} | {Bundesland}<br/>
-            <b>Kontakt:</b> <span style='color:#e67e22;'>{Kontakt}</span><br/>
-            <b>Webseite:</b> <a href='{Webseite}' target='_blank' style='color:#2980b9; text-decoration:none;'>{Webseite}</a>
+        <div style='font-family:Arial,sans-serif; box-sizing:border-box; width:300px; max-width:100%;
+                    padding:7px; font-size:12px; line-height:1.3; overflow-wrap:anywhere;'>
+            <b style='font-size:14px; color:#2c3e50;'>{Name}</b>
+            <hr style='margin:5px 0; border:0; border-top:1px solid #ccc;'/>
+            <b>Freie Netzkapazität:</b> <span style='color:#27ae60; font-weight:bold;'>{Frei_MVA} MVA</span><br/>
+            <b>Gebuchte Kapazität:</b> {Belegt_MVA} MVA<br/>
+            <b>Netzbetreiber:</b> {Betreiber} · {Bundesland}<br/>
+            <hr style='margin:5px 0; border:0; border-top:1px solid #eee;'/>
+            <b style='color:#8e44ad;'>Heuristisches Einspeisekonzept</b><br/>
+            <b>Konzept:</b> {Strategie}<br/>
+            <b>Wind-Jahresmittel (2024, 100 m):</b> {Wind_ms} m/s<br/>
+            <b>Wind-Schwelle:</b> {Wind_Schwelle_ms} m/s · {Wind_Screening_Status}<br/>
+            <b>Wind-Leistungsanteil:</b> {WEA_Leistung_MVA} MVA<br/>
+            <b>Globalstrahlung:</b> {Solar_kWh} kWh/m²<br/>
+            <b>PV-Leistungsansatz:</b> {PV_Leistung_MVA} MVA<br/>
+            <b>BESS-Leistungsansatz:</b> {Speicher_MVA} MVA<br/>
+            <hr style='margin:5px 0; border:0; border-top:1px solid #eee;'/>
+            <b>Kontakt:</b> {Kontakt}<br/>
+            <b>Webseite:</b> <a href='{Webseite}' target='_blank' style='overflow-wrap:anywhere;'>{Webseite}</a><br/>
+            <span style='font-size:10px; color:#59636e;'>Wind-Screening und Leistungsansätze sind heuristische Indikatoren, keine Ertrags- oder Lastflussberechnung.</span>
         </div>
     """
+
 
 # --- PYDECK MAP ---
 view = pdk.ViewState(latitude=47.6, longitude=13.8, zoom=7, pitch=45)
@@ -502,24 +519,42 @@ st.pydeck_chart(pdk.Deck(
     map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
     tooltip={
         "html": tooltip_html,
-        "style": {"backgroundColor": "white", "color": "black", "borderRadius": "5px", "boxShadow": "0px 2px 10px rgba(0,0,0,0.15)"}
+        "style": {
+            "backgroundColor": "white",
+            "color": "black",
+            "borderRadius": "5px",
+            "boxShadow": "0px 2px 10px rgba(0,0,0,0.15)",
+            "maxWidth": "320px",
+            "maxHeight": "55vh",
+            "overflowY": "auto",
+            "overflowX": "hidden",
+            "fontSize": "12px",
+            "lineHeight": "1.3",
+            "padding": "7px",
+            "boxSizing": "border-box",
+        }
     }
 ))
 
-# --- ANLAGENREGISTER: COMPACT MAIN TABLE + OPTIONAL DETAILS ---
+# --- TECHNISCHES ANLAGENREGISTER ---
 st.markdown("### 📋 Technisches Anlagenregister")
 
 if not f_df.empty:
-    # Keep the first view focused on the node identity, capacities and screening outcome.
     main_columns = [
-        "UID", "Name", "Bundesland", "Frei_MVA", "Belegt_MVA"
+        "UID",
+        "Name",
+        "Bundesland",
+        "Betreiber",
+        "Frei_MVA",
+        "Belegt_MVA",
     ]
     if use_climate_analysis:
         main_columns += [
-            "Wind_ms", "Wind_Screening_Status", "Strategie"
+            "Wind_ms",
+            "Wind_Screening_Status",
+            "Solar_kWh",
+            "Strategie",
         ]
-    else:
-        main_columns += ["Betreiber"]
 
     main_df = f_df[main_columns].copy()
     if use_climate_analysis:
@@ -529,28 +564,21 @@ if not f_df.empty:
             "Windpark + BESS (heuristisch)": "Wind + BESS",
             "Geringes Potenzial": "Geringes Potenzial",
         })
+
     main_df = main_df.rename(columns={
         "Name": "Netzknoten",
+        "Betreiber": "Netzbetreiber",
         "Frei_MVA": "Frei (MVA)",
         "Belegt_MVA": "Belegt (MVA)",
         "Wind_ms": "Wind @100 m (m/s)",
         "Wind_Screening_Status": "Wind-Screening",
+        "Solar_kWh": "Globalstrahlung (kWh/m²)",
     })
+
     st.dataframe(
         main_df,
         use_container_width=True,
         hide_index=True,
     )
-
-    detail_columns = [column for column in f_df.columns if column not in main_columns]
-    with st.expander("Weitere technische Angaben, Kontakte und Koordinaten anzeigen", expanded=False):
-        if detail_columns:
-            details_df = f_df[detail_columns].copy()
-            details_df = details_df.rename(columns={
-                "Solar_kWh": "Globalstrahlung (kWh/m²)",
-                "Wind_Schwelle_ms": "Wind-Schwelle (m/s)",
-                "VBS_Solar_h": "PV-Äquivalentstunden-Proxy (h/a)",
-            })
-            st.dataframe(details_df, use_container_width=True, hide_index=True)
 else:
     st.info("Keine Umspannwerke entsprechen den gewählten Filterkriterien.")
