@@ -59,7 +59,8 @@ with st.sidebar.expander("🌤️ Heuristische Ressourcenanalyse", expanded=True
     st.markdown("**Screening-Schwellenwerte:**")
     target_wind = st.slider("Min. Windgeschwindigkeit auf 100 m (m/s)", 3.5, 8.5, 4.0, 0.1)
     target_solar = st.slider("Min. Sonneneinstrahlung (kWh/m²)", 950, 1350, 950, 25)
-    st.caption("PV-Vollbenutzungsstunden-Proxy: Globalstrahlung / 1 kW/m² × PR 0,85; keine standortspezifische Ertragssimulation.")
+    st.caption("Wind-Screening: Vergleich des modellierten Jahresmittels der Windgeschwindigkeit in 100 m mit dem gewählten Schwellenwert. Keine Berechnung von Wind-Volllaststunden oder Windstromertrag.")
+    st.caption("PV-Äquivalentstunden-Proxy: Globalstrahlung / 1 kW/m² × PR 0,85; keine standortspezifische Ertragssimulation.")
 
 # =====================================================================
 # 📐 BLOCK 3: 3D-SKALIERUNG
@@ -85,27 +86,32 @@ def calculate_heuristic_mix(row):
     if not use_climate_analysis:
         return row['Farbe_Netz'], "Basis-Netzmodus", 0.0, 0.0, 0.0, 0, 0
     
-    # 1. Vereinfachte Ressourcen- und Vollbenutzungsstunden-Proxies
-    # The wind-hour proxy follows the user-selected screening threshold.
-    # At the default threshold of 4.0 m/s, the baseline results remain unchanged.
+    # 1. Vereinfachte Ressourcenindikatoren
+    # Wind is checked against the selected threshold using the annual modelled mean
+    # at 100 m. The resulting dimensionless score is only a heuristic allocation
+    # weight; it is NOT wind full-load hours or an energy-yield estimate.
     if row['Wind_ms'] < target_wind:
-        vbs_wind = 0.0
+        wind_weight_score = 0.0
     else:
-        vbs_wind = min(3200.0, 1000.0 + (row['Wind_ms'] - target_wind) * 500.0)
+        wind_weight_score = min(
+            3200.0,
+            1000.0 + (row['Wind_ms'] - target_wind) * 500.0
+        )
         
-    # GHI [kWh/m²] / reference irradiance [kW/m²] × PR [-] gives equivalent full-load hours [h].
+    # GHI [kWh/m²] / reference irradiance [kW/m²] × PR [-] gives a PV
+    # equivalent-full-load-hours proxy [h/a], not a site-specific yield simulation.
     vbs_solar = (row['Solar_kWh'] / REFERENCE_IRRADIANCE_KW_PER_M2) * PV_PERFORMANCE_RATIO
     
-    wind_ok = row['Wind_ms'] >= target_wind and vbs_wind > 0
+    wind_ok = wind_weight_score > 0
     solar_ok = row['Solar_kWh'] >= target_solar
     
     if not wind_ok and not solar_ok:
-        return [189, 195, 199, 100], "Geringes Potenzial", 0.0, 0.0, 0.0, int(vbs_wind), int(vbs_solar)
+        return [189, 195, 199, 100], "Geringes Potenzial", 0.0, 0.0, 0.0, int(vbs_solar)
         
     # 2. Gewichte bestimmen
-    total_vbs = (vbs_wind if wind_ok else 0) + (vbs_solar if solar_ok else 0)
-    w_wind = (vbs_wind / total_vbs) if wind_ok else 0.0
-    w_solar = (vbs_solar / total_vbs) if solar_ok else 0.0
+    total_resource_score = (wind_weight_score if wind_ok else 0) + (vbs_solar if solar_ok else 0)
+    w_wind = (wind_weight_score / total_resource_score) if wind_ok else 0.0
+    w_solar = (vbs_solar / total_resource_score) if solar_ok else 0.0
     
     # Heuristischer BESS-Leistungsanteil; nicht optimiert oder simuliert
     if wind_ok and solar_ok:
@@ -130,7 +136,7 @@ def calculate_heuristic_mix(row):
     leistung_wea = round(S * w_wind * (1 + speicher_anteil), 1)
     leistung_pv = round(S * w_solar * (1 + speicher_anteil), 1)
     
-    return farbe, strategie_name, leistung_wea, leistung_pv, leistung_speicher, int(vbs_wind), int(vbs_solar)
+    return farbe, strategie_name, leistung_wea, leistung_pv, leistung_speicher, int(vbs_solar)
 
 if not f_df.empty:
     res = f_df.apply(calculate_heuristic_mix, axis=1)
@@ -139,8 +145,16 @@ if not f_df.empty:
     f_df['WEA_Leistung_MVA'] = [r[2] for r in res]
     f_df['PV_Leistung_MVA'] = [r[3] for r in res]
     f_df['Speicher_MVA'] = [r[4] for r in res]
-    f_df['VBS_Wind_h'] = [r[5] for r in res]
-    f_df['VBS_Solar_h'] = [r[6] for r in res]
+    f_df['VBS_Solar_h'] = [r[5] for r in res]
+
+    if use_climate_analysis:
+        def get_wind_screening_status(speed):
+            if pd.isna(speed):
+                return "Keine Klimadaten"
+            return "Schwelle erfüllt" if speed >= target_wind else "Unterhalb der Schwelle"
+
+        f_df["Wind_Screening_Status"] = f_df["Wind_ms"].apply(get_wind_screening_status)
+        f_df["Wind_Schwelle_ms"] = target_wind
 
 
 # =====================================================================
@@ -186,9 +200,12 @@ else:
             <div style='background-color: #f8f9fa; padding: 8px; border-radius: 4px; margin-top: 5px; border-left: 4px solid #8e44ad;'>
                 <b style='color:#8e44ad; font-size:13px;'>📈 Heuristisches Einspeisekonzept:</b><br/>
                 <b>Konzept:</b> <span style='color:#2c3e50; font-weight:bold;'>{Strategie}</span><br/>
-                💨 Wind-Leistungsansatz: <b>{WEA_Leistung_MVA} MVA</b> (Wind-Proxy: {VBS_Wind_h} h/a)<br/>
+                💨 Wind-Jahresmittel (Modellwert 2024, 100 m): <b>{Wind_ms} m/s</b><br/>
+                <b>Wind-Screening-Schwelle:</b> {Wind_Schwelle_ms} m/s — <b>{Wind_Screening_Status}</b><br/>
+                💨 Wind-Leistungsansatz im Screening: <b>{WEA_Leistung_MVA} MVA</b> (heuristischer Ansatz)<br/>
                 ☀️ PV-Leistungsansatz: <b>{PV_Leistung_MVA} MVA</b> (PV-Äquivalentstunden-Proxy: {VBS_Solar_h} h/a)<br/>
-                🔋 <b>Angesetzte BESS-Leistung: {Speicher_MVA} MVA</b> (heuristischer Wert)
+                🔋 <b>Angesetzte BESS-Leistung: {Speicher_MVA} MVA</b> (heuristischer Wert)<br/>
+                <span style='font-size:11px; color:#59636e;'>Hinweis: Die Windprüfung ist eine Schwellenwertprüfung, keine Berechnung von Wind-Volllaststunden oder Stromertrag.</span>
             </div>
             
             <hr style='margin:6px 0; border: 0; border-top: 1px solid #eee;'/>
@@ -228,7 +245,18 @@ st.markdown("### 📋 Technisches Anlagenregister (Exportbereit)")
 if not f_df.empty:
     columns_to_drop = ["Farbe_Netz", "Finale_Farbe", "Breite", "Länge"]
     if not use_climate_analysis:
-        columns_to_drop += ["Strategie", "WEA_Leistung_MVA", "PV_Leistung_MVA", "Speicher_MVA", "VBS_Wind_h", "VBS_Solar_h"]
-    st.dataframe(f_df.drop(columns=columns_to_drop), use_container_width=True)
+        columns_to_drop += ["Strategie", "WEA_Leistung_MVA", "PV_Leistung_MVA", "Speicher_MVA", "VBS_Solar_h"]
+
+    display_df = f_df.drop(columns=columns_to_drop)
+    if use_climate_analysis:
+        display_df = display_df.rename(columns={
+            "Wind_ms": "Wind-Jahresmittel @ 100 m (m/s)",
+            "Solar_kWh": "Globalstrahlung (kWh/m²)",
+            "Wind_Screening_Status": "Wind-Screening",
+            "Wind_Schwelle_ms": "Wind-Schwelle (m/s)",
+            "VBS_Solar_h": "PV-Äquivalentstunden-Proxy (h/a)",
+        })
+
+    st.dataframe(display_df, use_container_width=True)
 else:
     st.info("Keine Umspannwerke entsprechen den gewählten Filterkriterien.")
