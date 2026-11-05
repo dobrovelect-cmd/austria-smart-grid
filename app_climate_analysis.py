@@ -1,12 +1,12 @@
 import json
 import math
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pydeck as pdk
+import pytz
 import requests
 import streamlit as st
 
@@ -21,6 +21,7 @@ BASE_CSV_FILE = APP_DIR / "substations_climate_base.csv"
 DATASET_METADATA_FILE = APP_DIR / "dataset_metadata.json"
 DATA_DIR = Path(os.environ.get("DATA_DIR", str(APP_DIR / "data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+VIENNA_TIMEZONE = pytz.timezone("Europe/Vienna")
 
 CAPACITY_OVERRIDES_FILE = DATA_DIR / "network_capacity_overrides.csv"
 CAPACITY_METADATA_FILE = DATA_DIR / "network_capacity_metadata.json"
@@ -60,11 +61,11 @@ def read_json_file(path, default=None):
 def parse_metadata_datetime(metadata):
     value = metadata.get("updated_at")
     if not value:
-        return datetime.min.replace(tzinfo=ZoneInfo("Europe/Vienna"))
+        return datetime.min.replace(tzinfo=timezone.utc)
     try:
         parsed = datetime.fromisoformat(value)
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=ZoneInfo("Europe/Vienna"))
+            parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed
     except (TypeError, ValueError):
         return datetime.min.replace(tzinfo=ZoneInfo("Europe/Vienna"))
@@ -169,7 +170,7 @@ def refresh_network_capacities():
     overrides.to_csv(temporary_csv, index=False, encoding="utf-8")
     os.replace(temporary_csv, CAPACITY_OVERRIDES_FILE)
 
-    now = datetime.now(ZoneInfo("Europe/Vienna"))
+    now = datetime.now(VIENNA_TIMEZONE)
     metadata = {
         "updated_at": now.isoformat(timespec="minutes"),
         "precision": "minute",
@@ -250,6 +251,8 @@ with button_col:
                 f"Erfolgreich aktualisiert: {refreshed_metadata['records']} Netzknoten. "
                 f"Zeitpunkt: {format_capacity_metadata(refreshed_metadata)}."
             )
+            # Reset the slider bounds to the newly loaded capacity range.
+            st.session_state.pop("available_capacity_range", None)
             if refreshed_metadata["api_records_without_climate_snapshot"]:
                 st.session_state["capacity_refresh_notice"] += (
                     f" {refreshed_metadata['api_records_without_climate_snapshot']} zusätzliche API-Einträge "
@@ -509,6 +512,13 @@ if not f_df.empty:
         main_columns += ["Betreiber"]
 
     main_df = f_df[main_columns].copy()
+    if use_climate_analysis:
+        main_df["Strategie"] = main_df["Strategie"].replace({
+            "Hybrides Wind-PV-System + BESS (heuristisch)": "Wind + PV + BESS",
+            "PV-Anlage + BESS (heuristisch)": "PV + BESS",
+            "Windpark + BESS (heuristisch)": "Wind + BESS",
+            "Geringes Potenzial": "Geringes Potenzial",
+        })
     main_df = main_df.rename(columns={
         "Name": "Netzknoten",
         "Frei_MVA": "Frei (MVA)",
