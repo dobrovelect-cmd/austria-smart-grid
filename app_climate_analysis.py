@@ -241,8 +241,10 @@ with status_col:
     source_label = capacity_metadata.get("source", "unbekannte Quelle")
     st.markdown(
         f"**Datenstand der freien Netzkapazitäten:** {format_capacity_metadata(capacity_metadata)}"
-        f"  \n<small>Quelle: {source_label}. Aktualisiert werden freie und belegte Netzkapazitäten; Klimadaten bleiben unverändert.</small>",
-        unsafe_allow_html=True,
+    )
+    st.caption(
+        f"Quelle: {source_label}. Aktualisiert werden freie und belegte Netzkapazitäten; "
+        "Klimadaten bleiben unverändert."
     )
 with button_col:
     if st.button("↻ Netzkapazitäten aktualisieren", type="primary", use_container_width=True):
@@ -255,6 +257,12 @@ with button_col:
             )
             # Reset the slider bounds to the newly loaded capacity range.
             st.session_state.pop("available_capacity_range", None)
+            if refreshed_metadata["booked_capacity_records"] < refreshed_metadata["records"]:
+                st.session_state["capacity_refresh_notice"] += (
+                    f" Gebuchte Kapazität wurde für {refreshed_metadata['booked_capacity_records']} von "
+                    f"{refreshed_metadata['records']} Netzknoten direkt aktualisiert; bei den übrigen "
+                    "Einträgen blieb der bisherige Wert erhalten."
+                )
             if refreshed_metadata["api_records_without_climate_snapshot"]:
                 st.session_state["capacity_refresh_notice"] += (
                     f" {refreshed_metadata['api_records_without_climate_snapshot']} zusätzliche API-Einträge "
