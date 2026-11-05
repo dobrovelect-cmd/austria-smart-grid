@@ -32,7 +32,7 @@ REQUEST_HEADERS = {
     "Accept": "application/json",
 }
 
-st.title("Räumliches Pre-Screening österreichischer Umspannwerke für Wind, PV und BESS")
+st.title("Räumliches Pre-Screening österreichischer Umspannwerke mit veröffentlichter Einspeisekapazität für Wind, PV und BESS")
 
 if not BASE_CSV_FILE.exists():
     st.error("❌ Datenbank nicht gefunden! Bitte sicherstellen, dass substations_climate_base.csv im Projektverzeichnis liegt.")
@@ -547,12 +547,12 @@ if not f_df.empty:
         "Betreiber",
         "Frei_MVA",
         "Belegt_MVA",
+        "Solar_kWh",
     ]
     if use_climate_analysis:
         main_columns += [
             "Wind_ms",
             "Wind_Screening_Status",
-            "Solar_kWh",
             "Strategie",
         ]
 
