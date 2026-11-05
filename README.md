@@ -31,10 +31,12 @@ docker build --no-cache -t austria-smart-grid:latest .
 Container starten:
 
 ```bash
-docker run --rm --name austria-smart-grid -p 8501:8501 austria-smart-grid:latest
+docker run --rm --name austria-smart-grid -p 8501:8501 -v austria-smart-grid-data:/app/data austria-smart-grid:latest
 ```
 
 Der Build prüft beim Erstellen zusätzlich, ob NumPy, pandas, PyArrow und Streamlit gemeinsam importiert werden können. Die Versionen von NumPy und PyArrow sind festgelegt, damit die Streamlit-Tabelle nicht durch eine inkompatible Arrow-Version ausfällt.
+
+Das benannte Docker-Volume `austria-smart-grid-data` speichert aktualisierte Netzkapazitäten dauerhaft. Es enthält nur den Kapazitäts-Override und den Zeitstempel; der Klima-CSV-Snapshot bleibt im Image und kann unabhängig davon aktualisiert werden.
 
 Anschließend die Anwendung im Browser öffnen:
 
@@ -43,6 +45,17 @@ Anschließend die Anwendung im Browser öffnen:
 Zum Beenden im Terminal, in dem der Container läuft, **Ctrl+C** drücken.
 
 Der Container verwendet den im Repository gespeicherten CSV-Datensatz `substations_climate_base.csv`. Beim normalen Start werden keine Klima- oder Netzdaten aus externen APIs abgerufen.
+
+### Netzkapazitäten bei Bedarf aktualisieren
+
+Im Dashboard befindet sich neben dem angezeigten Datenstand die Schaltfläche **„Netzkapazitäten aktualisieren“**. Sie ruft die aktuelle Netzknotenliste von EbUtilities ab und aktualisiert anhand der eindeutigen UID ausschließlich:
+
+- `Frei_MVA`: verfügbare Einspeisekapazität;
+- `Belegt_MVA`: gebuchte bzw. reservierte Kapazität.
+
+Die Aktualisierung wird nur gespeichert, wenn für alle Netzknoten des lokalen CSV-Snapshots passende API-Datensätze und gültige Werte für die freie Kapazität vorliegen. Bei einer unvollständigen API-Antwort bleiben die bisherigen Werte erhalten. Zusätzliche API-Knoten ohne passenden Klima-Datensatz werden nicht automatisch in die Karte aufgenommen.
+
+Der erfolgreiche Aktualisierungszeitpunkt wird in österreichischer Lokalzeit angezeigt und im Docker-Volume gespeichert. Wind- und Solardaten werden durch diese Schaltfläche nicht verändert. Sie bleiben Teil des separaten Klima-Snapshots.
 
 ### Aktualisierung des lokalen Datenstands
 
