@@ -89,12 +89,13 @@ Die Klimakennwerte beziehen sich auf das Kalenderjahr 2024 und werden über die 
 - Die Wetterwerte stammen aus räumlichen Reanalyse-/Modellgitterzellen und sind keine standortspezifischen Messungen oder Ertragsprognosen.
 - Bei unvollständigen oder fehlerhaft formatierten Open-Meteo-JSON-Antworten wird der betreffende Standort-Batch erneut abgefragt und bei Bedarf rekursiv in kleinere Teil-Batches zerlegt. Der CSV-Snapshot wird erst nach erfolgreicher Verarbeitung aller gültigen Netzknoten ersetzt.
 
-Der aktuelle CSV-Snapshot wurde am 3. November 2026 vollständig neu erzeugt. Dabei wurden die Netzknotendaten erneut von EbUtilities und die stündlichen Klimadaten für 2024 von Open-Meteo abgerufen. Die Windgeschwindigkeit wurde von der API explizit in m/s angefordert; der Collector prüft die zurückgemeldete Einheit. Der Snapshot umfasst 443 Netzknoten mit eindeutigen UIDs. Kennwerte dieses Snapshots: mittlere Windgeschwindigkeit 3,84 m/s (1,36–6,81 m/s), mittlere jährliche Globalstrahlung 1.309,5 kWh/m², 252 Netzknoten mit positiver freier Einspeisekapazität und 191 Netzknoten ohne ausgewiesene freie Kapazität.
+Der im Repository enthaltene CSV-Snapshot wurde am 3. November 2026 vollständig neu erzeugt. Dabei wurden die Netzknotendaten erneut von EbUtilities und die stündlichen Klimadaten für 2024 von Open-Meteo abgerufen. Die Windgeschwindigkeit wurde von der API explizit in m/s angefordert; der Collector prüft die zurückgemeldete Einheit. Der Snapshot umfasst 443 Netzknoten mit eindeutigen UIDs. Kennwerte dieses Snapshots: mittlere Windgeschwindigkeit 3,84 m/s (1,36–6,81 m/s), mittlere jährliche Globalstrahlung 1.309,5 kWh/m², 252 Netzknoten mit positiver freier Einspeisekapazität und 191 Netzknoten ohne ausgewiesene freie Kapazität.
 
 ## Dateien
 
 - `fetch_climate_data.py`: Abruf und Aktualisierung der Netzknoten- und Klimadaten.
 - `substations_climate_base.csv`: am 3. November 2026 aktualisierter Datensatz für 443 Netzknoten.
+- `dataset_metadata.json`: Zeitstempel und Quelle des im Repository enthaltenen Netzkapazitäts-/Klimadaten-Snapshots.
 - `app_climate_analysis.py`: Streamlit-Anwendung für Filterung, Klassifikation und räumliche Darstellung.
 - `Dockerfile`: reproduzierbare lokale Ausführungsumgebung für das Dashboard.
 
