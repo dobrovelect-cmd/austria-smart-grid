@@ -65,7 +65,7 @@ Die Tabelle zeigt in einer einzigen Ansicht UID, Netzknoten, Bundesland, Netzbet
 
 ### Interaktion mit der Karte
 
-Beim Überfahren eines Netzknotens erscheint weiterhin eine kompakte Hover-Information. Ein Klick auf einen Netzknoten öffnet zusätzlich eine dauerhaft sichtbare Detailkarte unterhalb der Karte. Sie bleibt geöffnet, bis **„Schließen“** betätigt wird. Die Karte zeigt zuerst das heuristische Einspeisekonzept und die drei Leistungsansätze für Wind, PV und BESS mit Symbolen. Die Hover-Information bleibt unabhängig davon verfügbar.
+Beim Überfahren eines Netzknotens erscheint weiterhin die Hover-Information. Ein Klick fixiert dieselbe Stationsinformation als schwebendes Fenster direkt über dem Kartenfeld; es bleibt beim Bewegen des Mauszeigers sichtbar und wird über **×** geschlossen. Es wird kein zusätzliches Detailfeld unterhalb der Karte erzeugt. Im Fenster steht zuerst das heuristische Einspeisekonzept mit den Leistungsansätzen für 🌬️ Wind, ☀️ PV und 🔋 BESS. Die drei Kandidaten-Kennzahlen oberhalb der Karte verwenden dieselben Farben wie die Säulen: Blau für Wind+BESS, Gelb für PV+BESS und Violett für Wind+PV+BESS.
 
 Für die Klickauswahl der PyDeck-Karte wird Streamlit 1.40.0 oder neuer benötigt; im Projekt ist Streamlit 1.40.0 festgesetzt.
 
