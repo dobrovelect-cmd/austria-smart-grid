@@ -3,7 +3,7 @@ import pandas as pd
 import pydeck as pdk
 import os
 
-st.set_page_config(page_title="Spatial Pre-Screening Austria", layout="wide")
+st.set_page_config(page_title="Räumliches Pre-Screening Österreich", layout="wide")
 
 # Screening-Proxies (keine standortspezifische Ertragssimulation).
 PV_PERFORMANCE_RATIO = 0.85
