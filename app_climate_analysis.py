@@ -468,7 +468,7 @@ else:
     ]
     for metric_col, label, count in candidate_metrics:
         metric_col.metric(label=label, value=count)
-    st.caption("🟦 Blau = Wind + BESS · 🟨 Gelb = PV + BESS · 🟪 Violett = Wind + PV + BESS. Farben entsprechen Säulen auf der Karte.")
+
 # =====================================================================
 # 🎯 TOOLTIP FÜR SCREENING-INDIKATOREN
 # =====================================================================
