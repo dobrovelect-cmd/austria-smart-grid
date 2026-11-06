@@ -13,10 +13,12 @@ def normalize_station_label(value):
     if value is None:
         return ""
     text = str(value).strip().casefold()
-    text = re.sub(r"[*†‡¹²³⁴⁵⁶⁷⁸⁹⁰]+$", "", text)
+    text = re.sub(r"[*†‡⁰¹²³⁴⁵⁶⁷⁸⁹]+$", "", text)
     text = unicodedata.normalize("NFKD", text)
     text = "".join(char for char in text if not unicodedata.combining(char))
-    return "".join(char for char in text if char.isalnum())
+    # Preserve punctuation: it can distinguish two separately listed nodes
+    # (for example, "UW Eibesbrunn" and "UW Eibesbrunn'").
+    return re.sub(r"\\s+", " ", text).strip()
 
 
 def station_match_key(operator, station_name):
