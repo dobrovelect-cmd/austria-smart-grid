@@ -57,6 +57,8 @@ Im Dashboard befindet sich neben dem angezeigten Datenstand die Schaltfläche **
 
 Die Aktualisierung wird nur gespeichert, wenn für alle Netzknoten des lokalen CSV-Snapshots passende API-Datensätze und gültige Werte für die freie Kapazität vorliegen. Bei einer unvollständigen API-Antwort bleiben die bisherigen Werte erhalten. Zusätzliche API-Knoten ohne passenden Klima-Datensatz werden nicht automatisch in die Karte aufgenommen.
 
+**Abgleich der Netzknoten:** Die UID aus der EbUtilities-Antwort wird nicht als dauerhafter Schlüssel verwendet, da sie sich zwischen Importen ändern kann. Die Aktualisierung ordnet die API-Datensätze deshalb anhand der Kombination aus Netzbetreiber und Netzknotenname zu; Groß-/Kleinschreibung und abschließende Fußnotenmarker werden dabei normalisiert. Die lokale UID bleibt als Schlüssel für die gespeicherten Kapazitätswerte erhalten. Bei fehlenden oder mehrdeutigen Zuordnungen wird die Aktualisierung vollständig abgebrochen, ohne den bisherigen Datenstand zu überschreiben.
+
 Der erfolgreiche Aktualisierungszeitpunkt wird in österreichischer Lokalzeit angezeigt und im Docker-Volume gespeichert. Wind- und Solardaten werden durch diese Schaltfläche nicht verändert. Sie bleiben Teil des separaten Klima-Snapshots.
 
 ### Technisches Anlagenregister
