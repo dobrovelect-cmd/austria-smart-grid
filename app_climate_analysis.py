@@ -11,6 +11,8 @@ import pytz
 import requests
 import streamlit as st
 
+from capacity_matching import index_api_stations, station_match_key
+
 st.set_page_config(page_title="Pre-Screening österreichischer Umspannwerke", layout="wide")
 
 # Screening-Proxies (keine standortspezifische Ertragssimulation).
@@ -114,13 +116,27 @@ def atomic_write_json(path, payload):
 
 
 def refresh_network_capacities():
-    """Refresh only grid-capacity values; keep climate data unchanged."""
-    # Start from the currently applied dataset so missing bookedCapacity values
-    # preserve the last known value rather than reverting to the bundled CSV.
+    """Refresh only grid-capacity values; match stations by stable labels."""
+    # EbUtilities regenerates its UID between imports. Therefore, the API UID
+    # must not be used to join a refreshed response to the climate snapshot.
+    # The stable key is the reporting network operator plus station name.
     base_df = load_data()
     base_df["_UID_key"] = base_df["UID"].map(normalize_uid)
     if base_df["_UID_key"].isna().any() or base_df["_UID_key"].duplicated().any():
         raise RuntimeError("Der lokale CSV-Snapshot enthält fehlende oder doppelte UID-Werte.")
+
+    local_keys = [
+        station_match_key(row["Betreiber"], row["Name"])
+        for _, row in base_df.iterrows()
+    ]
+    if any(not all(key) for key in local_keys):
+        raise RuntimeError(
+            "Der lokale CSV-Snapshot enthält einen Netzknoten ohne Netzbetreiber oder Namen."
+        )
+    if len(set(local_keys)) != len(local_keys):
+        raise RuntimeError(
+            "Der lokale CSV-Snapshot enthält doppelte Kombinationen aus Netzbetreiber und Netzknotenname."
+        )
 
     response = requests.post(
         EBUTILITIES_API_URL,
@@ -138,30 +154,33 @@ def refresh_network_capacities():
     if not isinstance(powerstations, list) or not powerstations:
         raise RuntimeError("EbUtilities hat keine Netzknotenliste zurückgegeben.")
 
-    api_records = {}
-    for item in powerstations:
-        uid = normalize_uid(item.get("uid", item.get("powerstationId")))
-        if uid is None:
-            continue
-        if uid in api_records:
-            raise RuntimeError(f"EbUtilities hat die UID {uid} mehrfach zurückgegeben.")
-        api_records[uid] = item
+    try:
+        api_records = index_api_stations(powerstations)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
 
-    local_uids = set(base_df["_UID_key"])
-    api_uids = set(api_records)
-    missing_uids = local_uids - api_uids
-    if missing_uids:
-        examples = ", ".join(sorted(missing_uids)[:8])
+    local_key_set = set(local_keys)
+    api_key_set = set(api_records)
+    missing_keys = local_key_set - api_key_set
+    if missing_keys:
+        missing_rows = [
+            f"{row['Betreiber']} / {row['Name']}"
+            for (_, row), key in zip(base_df.iterrows(), local_keys)
+            if key in missing_keys
+        ]
+        examples = "; ".join(missing_rows[:5])
         raise RuntimeError(
-            f"Abbruch: Für {len(missing_uids)} von {len(local_uids)} lokalen Netzknoten "
-            f"fehlen API-Datensätze (z. B. {examples}). Der bisherige Datenstand bleibt erhalten."
+            f"Abbruch: Für {len(missing_keys)} von {len(local_keys)} lokalen Netzknoten "
+            "fehlen API-Datensätze mit passendem Netzbetreiber und Namen "
+            f"(z. B. {examples}). Der bisherige Datenstand bleibt erhalten."
         )
 
     updated_rows = []
     booked_values_available = 0
-    for _, row in base_df.iterrows():
+    for (_, row), key in zip(base_df.iterrows(), local_keys):
+        # Keep the local snapshot UID in the override file. API UIDs are volatile.
         uid = row["_UID_key"]
-        item = api_records[uid]
+        item = api_records[key]
         available = parse_capacity(item.get("availableCapacity"), "availableCapacity", uid)
         booked_raw = item.get("bookedCapacity")
         if booked_raw is None or str(booked_raw).strip() == "":
@@ -176,6 +195,7 @@ def refresh_network_capacities():
         })
 
     # Write only the capacity overlay into the persistent Docker volume.
+    # No file is replaced until every local station has been matched and checked.
     overrides = pd.DataFrame(updated_rows, columns=["UID", "Frei_MVA", "Belegt_MVA"])
     temporary_csv = CAPACITY_OVERRIDES_FILE.with_suffix(".csv.tmp")
     overrides.to_csv(temporary_csv, index=False, encoding="utf-8")
@@ -185,15 +205,14 @@ def refresh_network_capacities():
     metadata = {
         "updated_at": now.isoformat(timespec="minutes"),
         "precision": "minute",
-        "source": "EbUtilities API",
+        "source": "EbUtilities API (Abgleich nach Netzbetreiber und Netzknotenname)",
         "records": len(updated_rows),
         "booked_capacity_records": booked_values_available,
         "api_records": len(powerstations),
-        "api_records_without_climate_snapshot": len(api_uids - local_uids),
+        "api_records_without_climate_snapshot": len(api_key_set - local_key_set),
     }
     atomic_write_json(CAPACITY_METADATA_FILE, metadata)
     return metadata
-
 
 def load_data():
     df = pd.read_csv(BASE_CSV_FILE)
