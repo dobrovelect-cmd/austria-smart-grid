@@ -16,6 +16,12 @@ class CapacityMatchingTests(unittest.TestCase):
             station_match_key("Netz Burgenland GmbH", "UW GÜSSING"),
         )
 
+    def test_apostrophe_is_preserved_when_it_distinguishes_nodes(self):
+        self.assertNotEqual(
+            station_match_key("Netz Niederösterreich GmbH", "UW Eibesbrunn"),
+            station_match_key("Netz Niederösterreich GmbH", "UW Eibesbrunn'"),
+        )
+
     def test_api_uid_is_not_part_of_the_matching_key(self):
         record = {
             "uid": "a-newly-generated-id",
