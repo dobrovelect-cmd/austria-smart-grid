@@ -18,7 +18,7 @@ def normalize_station_label(value):
     text = "".join(char for char in text if not unicodedata.combining(char))
     # Preserve punctuation: it can distinguish two separately listed nodes
     # (for example, "UW Eibesbrunn" and "UW Eibesbrunn'").
-    return re.sub(r"\\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def station_match_key(operator, station_name):
