@@ -33,12 +33,12 @@ docker build --no-cache -t austria-smart-grid:latest .
 Container starten:
 
 ```bash
-docker run --rm --name austria-smart-grid -p 8501:8501 -v austria-smart-grid-data:/app/data austria-smart-grid:latest
+docker run --rm --name austria-smart-grid -p 8501:8501 austria-smart-grid:latest
 ```
 
 Der Build prüft beim Erstellen zusätzlich, ob NumPy, pandas, PyArrow und Streamlit gemeinsam importiert werden können. Die Versionen von NumPy und PyArrow sind festgelegt, damit die Streamlit-Tabelle nicht durch eine inkompatible Arrow-Version ausfällt.
 
-Das benannte Docker-Volume `austria-smart-grid-data` speichert aktualisierte Netzkapazitäten dauerhaft. Es enthält nur den Kapazitäts-Override und den Zeitstempel; der Klima-CSV-Snapshot bleibt im Image und kann unabhängig davon aktualisiert werden.
+Der Container nutzt den versionierten CSV-Snapshot direkt aus dem Image. Für die Demonstration ist kein zusätzliches Docker-Volume erforderlich.
 
 Anschließend die Anwendung im Browser öffnen:
 
@@ -48,18 +48,11 @@ Zum Beenden im Terminal, in dem der Container läuft, **Ctrl+C** drücken.
 
 Der Container verwendet den im Repository gespeicherten CSV-Datensatz `substations_climate_base.csv`. Beim normalen Start werden keine Klima- oder Netzdaten aus externen APIs abgerufen.
 
-### Netzkapazitäten bei Bedarf aktualisieren
+### Datenstand der Demonstration
 
-Im Dashboard befindet sich neben dem angezeigten Datenstand die Schaltfläche **„Netzkapazitäten aktualisieren“**. Sie ruft die aktuelle Netzknotenliste von EbUtilities ab und aktualisiert anhand der eindeutigen UID ausschließlich:
+Das Dashboard verwendet einen versionierten CSV-Snapshot mit Netzkapazitäten von EbUtilities und Klimakennwerten von Open-Meteo für das Jahr 2024. Beim Öffnen der App werden keine externen APIs aufgerufen. Die Kapazitätswerte bleiben während der Demonstration unverändert; dadurch ist das Verhalten reproduzierbar und unabhängig von der aktuellen Verfügbarkeit der API.
 
-- `Frei_MVA`: verfügbare Einspeisekapazität;
-- `Belegt_MVA`: gebuchte bzw. reservierte Kapazität.
-
-Die Aktualisierung wird nur gespeichert, wenn für alle Netzknoten des lokalen CSV-Snapshots passende API-Datensätze und gültige Werte für die freie Kapazität vorliegen. Bei einer unvollständigen API-Antwort bleiben die bisherigen Werte erhalten. Zusätzliche API-Knoten ohne passenden Klima-Datensatz werden nicht automatisch in die Karte aufgenommen.
-
-**Abgleich der Netzknoten:** Die UID aus der EbUtilities-Antwort wird nicht als dauerhafter Schlüssel verwendet, da sie sich zwischen Importen ändern kann. Die Aktualisierung ordnet die API-Datensätze deshalb anhand der Kombination aus Netzbetreiber und Netzknotenname zu; Groß-/Kleinschreibung und abschließende Fußnotenmarker werden dabei normalisiert. Die lokale UID bleibt als Schlüssel für die gespeicherten Kapazitätswerte erhalten. Bei fehlenden oder mehrdeutigen Zuordnungen wird die Aktualisierung vollständig abgebrochen, ohne den bisherigen Datenstand zu überschreiben.
-
-Der erfolgreiche Aktualisierungszeitpunkt wird in österreichischer Lokalzeit angezeigt und im Docker-Volume gespeichert. Wind- und Solardaten werden durch diese Schaltfläche nicht verändert. Sie bleiben Teil des separaten Klima-Snapshots.
+Der Snapshot kann durch den Maintainer separat über den GitHub-Actions-Workflow „Refresh network and climate dataset“ neu erzeugt werden. Nach Veröffentlichung eines neuen Snapshots wird die Anwendung aus dem aktualisierten Repository-Stand neu gestartet.
 
 ### Technisches Anlagenregister
 
@@ -80,11 +73,10 @@ Wenn ein neuer CSV-Snapshot auf GitHub veröffentlicht wurde, kann der lokale St
 ```bash
 git pull
 docker build --no-cache -t austria-smart-grid:latest .
+docker run --rm --name austria-smart-grid -p 8501:8501 austria-smart-grid:latest
 ```
 
-`--no-cache` stellt sicher, dass geänderte Python-Abhängigkeiten neu installiert werden.
-
-Danach den Container wie oben beschrieben erneut starten.
+`--no-cache` stellt sicher, dass geänderte Python-Abhängigkeiten neu installiert werden. Der neue Container liest den aktualisierten CSV-Snapshot aus dem Image.
 
 ## Klimadaten und Einheiten
 
