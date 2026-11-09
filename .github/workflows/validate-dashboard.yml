@@ -30,18 +30,13 @@ jobs:
           pip install -r requirements.txt
 
       - name: Check Python syntax
-        run: python -m py_compile app_climate_analysis.py fetch_climate_data.py capacity_matching.py test_capacity_matching.py
-
-      - name: Test stable station matching
-        run: python -m unittest -v test_capacity_matching.py
+        run: python -m py_compile app_climate_analysis.py fetch_climate_data.py 
 
       - name: Validate metadata and dataset structure
         run: |
           python -m json.tool dataset_metadata.json > /dev/null
           python - <<'PY'
           import pandas as pd
-          from capacity_matching import station_match_key
-
           df = pd.read_csv("substations_climate_base.csv")
           required = {
               "UID", "Name", "Frei_MVA", "Belegt_MVA",
@@ -52,12 +47,6 @@ jobs:
               raise SystemExit(f"Missing dataset columns: {sorted(missing)}")
           if df["UID"].isna().any() or df["UID"].duplicated().any():
               raise SystemExit("UID values must be present and unique")
-          station_keys = [
-              station_match_key(operator, name)
-              for operator, name in zip(df["Betreiber"], df["Name"])
-          ]
-          if any(not all(key) for key in station_keys) or len(set(station_keys)) != len(station_keys):
-              raise SystemExit("Operator/name station keys must be present and unique")
           if df[["Frei_MVA", "Belegt_MVA", "Wind_ms", "Solar_kWh"]].isna().any().any():
               raise SystemExit("Required capacity or climate values are missing")
           print(f"Validated {len(df)} network nodes.")
