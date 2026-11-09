@@ -1,17 +1,11 @@
 import html
 import json
-import math
-import os
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import pydeck as pdk
-import pytz
-import requests
 import streamlit as st
-
-from capacity_matching import index_api_stations, station_match_key
 
 st.set_page_config(page_title="Pre-Screening österreichischer Umspannwerke", layout="wide")
 
@@ -22,18 +16,6 @@ REFERENCE_IRRADIANCE_KW_PER_M2 = 1.0
 APP_DIR = Path(__file__).resolve().parent
 BASE_CSV_FILE = APP_DIR / "substations_climate_base.csv"
 DATASET_METADATA_FILE = APP_DIR / "dataset_metadata.json"
-DATA_DIR = Path(os.environ.get("DATA_DIR", str(APP_DIR / "data")))
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-VIENNA_TIMEZONE = pytz.timezone("Europe/Vienna")
-
-CAPACITY_OVERRIDES_FILE = DATA_DIR / "network_capacity_overrides.csv"
-CAPACITY_METADATA_FILE = DATA_DIR / "network_capacity_metadata.json"
-EBUTILITIES_API_URL = "https://www.ebutilities.at/api/powerstations/list"
-REQUEST_HEADERS = {
-    "User-Agent": "SMART-Grid-Austria/1.0 (capacity refresh)",
-    "Accept": "application/json",
-}
-
 st.title("Räumliches Pre-Screening österreichischer Umspannwerke mit veröffentlichter Einspeisekapazität für Wind, PV und BESS")
 
 # Close the floating map card through a lightweight query parameter.
@@ -59,186 +41,13 @@ def normalize_uid(value):
     return value or None
 
 
-def read_json_file(path, default=None):
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except FileNotFoundError:
-        return default or {}
-    except (json.JSONDecodeError, OSError):
-        return default or {}
-
-
-def parse_metadata_datetime(metadata):
-    value = metadata.get("updated_at")
-    if not value:
-        return datetime.min.replace(tzinfo=timezone.utc)
-    try:
-        parsed = datetime.fromisoformat(value)
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed
-    except (TypeError, ValueError):
-        return datetime.min.replace(tzinfo=timezone.utc)
-
-
-def get_capacity_metadata():
-    base_meta = read_json_file(DATASET_METADATA_FILE, {
-        "updated_at": "2026-11-03",
-        "precision": "date",
-        "source": "Repository snapshot",
-        "records": 443,
-    })
-    live_meta = read_json_file(CAPACITY_METADATA_FILE)
-    if live_meta and parse_metadata_datetime(live_meta) > parse_metadata_datetime(base_meta):
-        return live_meta
-    return base_meta
-
-
-def parse_capacity(value, field_name, uid):
-    if value is None or str(value).strip() == "":
-        raise ValueError(f"EbUtilities lieferte keinen Wert für {field_name} (UID {uid}).")
-    try:
-        number = float(str(value).strip().replace(",", "."))
-    except (TypeError, ValueError):
-        raise ValueError(f"Ungültiger Wert für {field_name} (UID {uid}): {value!r}")
-    if not math.isfinite(number) or number < 0:
-        raise ValueError(f"Unplausibler Wert für {field_name} (UID {uid}): {value!r}")
-    return number
-
-
-def atomic_write_json(path, payload):
-    temporary_path = path.with_suffix(path.suffix + ".tmp")
-    with temporary_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
-        handle.write("\n")
-    os.replace(temporary_path, path)
-
-
-def refresh_network_capacities():
-    """Refresh only grid-capacity values; match stations by stable labels."""
-    # EbUtilities regenerates its UID between imports. Therefore, the API UID
-    # must not be used to join a refreshed response to the climate snapshot.
-    # The stable key is the reporting network operator plus station name.
-    base_df = load_data()
-    base_df["_UID_key"] = base_df["UID"].map(normalize_uid)
-    if base_df["_UID_key"].isna().any() or base_df["_UID_key"].duplicated().any():
-        raise RuntimeError("Der lokale CSV-Snapshot enthält fehlende oder doppelte UID-Werte.")
-
-    local_keys = [
-        station_match_key(row["Betreiber"], row["Name"])
-        for _, row in base_df.iterrows()
-    ]
-    if any(not all(key) for key in local_keys):
-        raise RuntimeError(
-            "Der lokale CSV-Snapshot enthält einen Netzknoten ohne Netzbetreiber oder Namen."
-        )
-    if len(set(local_keys)) != len(local_keys):
-        raise RuntimeError(
-            "Der lokale CSV-Snapshot enthält doppelte Kombinationen aus Netzbetreiber und Netzknotenname."
-        )
-
-    response = requests.post(
-        EBUTILITIES_API_URL,
-        json={},
-        headers=REQUEST_HEADERS,
-        timeout=(15, 60),
-    )
-    response.raise_for_status()
-    payload = response.json()
-    if not isinstance(payload, dict) or payload.get("error"):
-        error = payload.get("error", "Ungültige API-Antwort") if isinstance(payload, dict) else "Ungültiges Antwortformat"
-        raise RuntimeError(f"EbUtilities API-Fehler: {error}")
-
-    powerstations = payload.get("powerstations")
-    if not isinstance(powerstations, list) or not powerstations:
-        raise RuntimeError("EbUtilities hat keine Netzknotenliste zurückgegeben.")
-
-    try:
-        api_records = index_api_stations(powerstations)
-    except ValueError as exc:
-        raise RuntimeError(str(exc)) from exc
-
-    local_key_set = set(local_keys)
-    api_key_set = set(api_records)
-    missing_keys = local_key_set - api_key_set
-    if missing_keys:
-        missing_rows = [
-            f"{row['Betreiber']} / {row['Name']}"
-            for (_, row), key in zip(base_df.iterrows(), local_keys)
-            if key in missing_keys
-        ]
-        examples = "; ".join(missing_rows[:5])
-        raise RuntimeError(
-            f"Abbruch: Für {len(missing_keys)} von {len(local_keys)} lokalen Netzknoten "
-            "fehlen API-Datensätze mit passendem Netzbetreiber und Namen "
-            f"(z. B. {examples}). Der bisherige Datenstand bleibt erhalten."
-        )
-
-    updated_rows = []
-    booked_values_available = 0
-    for (_, row), key in zip(base_df.iterrows(), local_keys):
-        # Keep the local snapshot UID in the override file. API UIDs are volatile.
-        uid = row["_UID_key"]
-        item = api_records[key]
-        available = parse_capacity(item.get("availableCapacity"), "availableCapacity", uid)
-        booked_raw = item.get("bookedCapacity")
-        if booked_raw is None or str(booked_raw).strip() == "":
-            booked = parse_capacity(row["Belegt_MVA"], "Belegt_MVA (Bestandswert)", uid)
-        else:
-            booked = parse_capacity(booked_raw, "bookedCapacity", uid)
-            booked_values_available += 1
-        updated_rows.append({
-            "UID": uid,
-            "Frei_MVA": available,
-            "Belegt_MVA": booked,
-        })
-
-    # Write only the capacity overlay into the persistent Docker volume.
-    # No file is replaced until every local station has been matched and checked.
-    overrides = pd.DataFrame(updated_rows, columns=["UID", "Frei_MVA", "Belegt_MVA"])
-    temporary_csv = CAPACITY_OVERRIDES_FILE.with_suffix(".csv.tmp")
-    overrides.to_csv(temporary_csv, index=False, encoding="utf-8")
-    os.replace(temporary_csv, CAPACITY_OVERRIDES_FILE)
-
-    now = datetime.now(VIENNA_TIMEZONE)
-    metadata = {
-        "updated_at": now.isoformat(timespec="minutes"),
-        "precision": "minute",
-        "source": "EbUtilities API (Abgleich nach Netzbetreiber und Netzknotenname)",
-        "records": len(updated_rows),
-        "booked_capacity_records": booked_values_available,
-        "api_records": len(powerstations),
-        "api_records_without_climate_snapshot": len(api_key_set - local_key_set),
-    }
-    atomic_write_json(CAPACITY_METADATA_FILE, metadata)
-    return metadata
-
 def load_data():
+    """Load the committed, validated network and climate snapshot."""
     df = pd.read_csv(BASE_CSV_FILE)
-
-    # Apply live capacity values only if they are newer than the bundled CSV snapshot.
-    base_meta = read_json_file(DATASET_METADATA_FILE, {"updated_at": "2026-11-03"})
-    live_meta = read_json_file(CAPACITY_METADATA_FILE)
-    if (
-        CAPACITY_OVERRIDES_FILE.exists()
-        and live_meta
-        and parse_metadata_datetime(live_meta) > parse_metadata_datetime(base_meta)
-    ):
-        overrides = pd.read_csv(CAPACITY_OVERRIDES_FILE)
-        overrides["_UID_key"] = overrides["UID"].map(normalize_uid)
-        overrides = overrides.drop_duplicates("_UID_key").set_index("_UID_key")
-        df["_UID_key"] = df["UID"].map(normalize_uid)
-        for column in ["Frei_MVA", "Belegt_MVA"]:
-            if column in overrides.columns:
-                refreshed_values = df["_UID_key"].map(overrides[column])
-                df[column] = refreshed_values.combine_first(df[column])
-        df = df.drop(columns=["_UID_key"])
-
     df["Kontakt"] = df["Kontakt"].fillna("Nicht verfügbar")
     df["Webseite"] = df["Webseite"].fillna("Nicht verfügbar")
 
-    # Traffic-light colours reflect the currently applied available capacity.
+    # Traffic-light colours reflect the available capacity in the snapshot.
     def get_base_grid_color(avail):
         if avail <= 5:
             return [220, 20, 60, 180]
@@ -250,64 +59,34 @@ def load_data():
     return df
 
 
-def format_capacity_metadata(metadata):
+def format_snapshot_timestamp(metadata):
     value = metadata.get("updated_at", "unbekannt")
     if metadata.get("precision") == "date":
         try:
             return datetime.fromisoformat(value).strftime("%d.%m.%Y")
         except ValueError:
             return value
-    return parse_metadata_datetime(metadata).strftime("%d.%m.%Y, %H:%M")
+    try:
+        parsed = datetime.fromisoformat(value)
+        return parsed.strftime("%d.%m.%Y, %H:%M")
+    except (TypeError, ValueError):
+        return value
 
 
 df = load_data()
 
-# --- CURRENTNESS AND ON-DEMAND NETWORK CAPACITY UPDATE ---
-status_col, button_col = st.columns([2.2, 1.0])
-capacity_metadata = get_capacity_metadata()
-with status_col:
-    source_label = capacity_metadata.get("source", "unbekannte Quelle")
-    source_help = html.escape(
-        f"Quelle: {source_label}. Aktualisiert werden freie und belegte Netzkapazitäten; "
-        "Klimadaten bleiben unverändert."
-    )
-    st.markdown(
-        f'**Datenstand der freien Netzkapazitäten:** {format_capacity_metadata(capacity_metadata)} '
-        f'<span title="{source_help}" style="color:#6b7280; cursor:help;">ⓘ</span>',
-        unsafe_allow_html=True,
-    )
-with button_col:
-    if st.button("↻ Netzkapazitäten aktualisieren", type="primary", use_container_width=True):
-        try:
-            with st.spinner("Aktuelle Netzkapazitäten werden von EbUtilities geladen und geprüft …"):
-                refreshed_metadata = refresh_network_capacities()
-            st.session_state["capacity_refresh_notice"] = (
-                f"Erfolgreich aktualisiert: {refreshed_metadata['records']} Netzknoten. "
-                f"Zeitpunkt: {format_capacity_metadata(refreshed_metadata)}."
-            )
-            # Reset the slider bounds to the newly loaded capacity range.
-            st.session_state.pop("available_capacity_range", None)
-            if refreshed_metadata["booked_capacity_records"] < refreshed_metadata["records"]:
-                st.session_state["capacity_refresh_notice"] += (
-                    f" Gebuchte Kapazität wurde für {refreshed_metadata['booked_capacity_records']} von "
-                    f"{refreshed_metadata['records']} Netzknoten direkt aktualisiert; bei den übrigen "
-                    "Einträgen blieb der bisherige Wert erhalten."
-                )
-            if refreshed_metadata["api_records_without_climate_snapshot"]:
-                st.session_state["capacity_refresh_notice"] += (
-                    f" {refreshed_metadata['api_records_without_climate_snapshot']} zusätzliche API-Einträge "
-                    "wurden nicht übernommen, da dafür kein Klimadatensatz vorliegt."
-                )
-            st.rerun()
-        except Exception as exc:
-            st.error(
-                "Die Aktualisierung ist fehlgeschlagen. Der bisherige Kapazitätsstand wurde beibehalten. "
-                f"Details: {exc}"
-            )
+# The demo uses the validated, version-controlled snapshot; no live API calls
+# are made during startup or while using the dashboard.
+try:
+    with DATASET_METADATA_FILE.open("r", encoding="utf-8") as metadata_file:
+        dataset_metadata = json.load(metadata_file)
+except (FileNotFoundError, json.JSONDecodeError, OSError):
+    dataset_metadata = {"updated_at": "unbekannt", "source": "Repository-Snapshot"}
 
-refresh_notice = st.session_state.pop("capacity_refresh_notice", None)
-if refresh_notice:
-    st.success(refresh_notice)
+st.caption(
+    f"Datenstand des Datensatzes: {format_snapshot_timestamp(dataset_metadata)}"
+    f" · Quelle: {dataset_metadata.get('source', 'Repository-Snapshot')}"
+)
 
 # =====================================================================
 # 🎛️ BLOCK 1: BASIS-NETZFILTER
