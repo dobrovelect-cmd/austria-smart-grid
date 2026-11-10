@@ -4,7 +4,6 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV DATA_DIR=/app/data
 
 # Install the Python dependencies.
 COPY requirements.txt ./
@@ -15,12 +14,9 @@ RUN python -c "import numpy, pandas, pyarrow, streamlit; print('Dependency check
 
 # The dashboard uses the committed CSV snapshot and does not fetch data at startup.
 COPY app_climate_analysis.py ./
+COPY screening_logic.py ./
 COPY substations_climate_base.csv ./
 COPY dataset_metadata.json ./
-
-# The named Docker volume mounted at /app/data stores live capacity updates.
-
-RUN mkdir -p /app/data
 
 EXPOSE 8501
 
