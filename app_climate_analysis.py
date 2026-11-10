@@ -7,10 +7,9 @@ import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
-st.set_page_config(page_title="Pre-Screening österreichischer Umspannwerke", layout="wide")
+from screening_logic import calculate_heuristic_mix, count_candidate_strategies
 
-# Screening-Proxies (keine standortspezifische Ertragssimulation).
-from screening_logic import calculate_heuristic_mix
+st.set_page_config(page_title="Pre-Screening österreichischer Umspannwerke", layout="wide")
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -216,10 +215,8 @@ if not use_climate_analysis:
     col2.metric("Max. freie Kapazität", f"{f_df['Frei_MVA'].max()} MVA" if not f_df.empty else "0 MVA")
     col3.metric("Durchschn. freie Kapazität", f"{round(f_df['Frei_MVA'].mean(), 1)} MVA" if not f_df.empty else "0 MVA")
 else:
-    counts = (
-        f_df["Strategie"].value_counts()
-        if "Strategie" in f_df.columns
-        else pd.Series(dtype="int64")
+    counts = count_candidate_strategies(
+        f_df["Strategie"] if "Strategie" in f_df.columns else []
     )
 
     # Colored square markers match the corresponding ColumnLayer colors.
