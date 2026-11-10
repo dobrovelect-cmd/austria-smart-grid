@@ -142,7 +142,7 @@ with st.sidebar.expander("🌤️ Heuristische Ressourcenanalyse", expanded=True
     )
     target_solar = st.slider(
         "Min. Sonneneinstrahlung (kWh/m²)",
-        950, 1350, 950, 25,
+        950, 1350, 1300, 25,
         help=(
             "PV-Äquivalentstunden-Proxy: Globalstrahlung / 1 kW/m² × PR 0,85. "
             "Der Faktor 0,85 ist ein vereinfachter Performance-Ratio-Ansatz; "
