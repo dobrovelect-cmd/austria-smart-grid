@@ -30,26 +30,53 @@ jobs:
           pip install -r requirements.txt
 
       - name: Check Python syntax
-        run: python -m py_compile app_climate_analysis.py fetch_climate_data.py 
+        run: python -m py_compile app_climate_analysis.py fetch_climate_data.py screening_logic.py test_screening_logic.py
+
+      - name: Test screening calculations and edge cases
+        run: python -m unittest -v test_screening_logic.py
 
       - name: Validate metadata and dataset structure
         run: |
           python -m json.tool dataset_metadata.json > /dev/null
           python - <<'PY'
           import pandas as pd
+
           df = pd.read_csv("substations_climate_base.csv")
           required = {
-              "UID", "Name", "Frei_MVA", "Belegt_MVA",
-              "Bundesland", "Betreiber", "Wind_ms", "Solar_kWh"
+              "UID", "Name", "Frei_MVA", "Belegt_MVA", "Breite", "Länge",
+              "Bundesland", "Betreiber", "Kontakt", "Webseite", "Wind_ms", "Solar_kWh"
           }
           missing = required.difference(df.columns)
           if missing:
               raise SystemExit(f"Missing dataset columns: {sorted(missing)}")
-          if df["UID"].isna().any() or df["UID"].duplicated().any():
+          if len(df) < 400:
+              raise SystemExit(f"Unexpectedly small dataset: {len(df)} rows")
+          if df["UID"].isna().any() or df["UID"].astype(str).duplicated().any():
               raise SystemExit("UID values must be present and unique")
-          if df[["Frei_MVA", "Belegt_MVA", "Wind_ms", "Solar_kWh"]].isna().any().any():
-              raise SystemExit("Required capacity or climate values are missing")
-          print(f"Validated {len(df)} network nodes.")
+
+          numeric = [
+              "Frei_MVA", "Belegt_MVA", "Breite", "Länge", "Wind_ms", "Solar_kWh"
+          ]
+          if df[numeric].isna().any().any():
+              raise SystemExit("Required numeric values are missing")
+          if (df[["Frei_MVA", "Belegt_MVA"]] < 0).any().any():
+              raise SystemExit("Grid capacities cannot be negative")
+          if not df["Breite"].between(-90, 90).all():
+              raise SystemExit("Latitude values are outside -90 to 90 degrees")
+          if not df["Länge"].between(-180, 180).all():
+              raise SystemExit("Longitude values are outside -180 to 180 degrees")
+          if not df["Wind_ms"].between(0, 100).all():
+              raise SystemExit("Wind_ms values outside 0-100 m/s")
+          if not df["Solar_kWh"].between(0, 3000).all():
+              raise SystemExit("Solar_kWh values outside 0-3000 kWh/m²")
+
+          metadata = __import__("json").load(open("dataset_metadata.json", encoding="utf-8"))
+          if metadata.get("records") != len(df):
+              raise SystemExit(
+                  f"Metadata record count {metadata.get('records')} does not match CSV rows {len(df)}"
+              )
+          print(f"Validated {len(df)} network nodes and dataset metadata.")
+          PY
 
       - name: Build Docker image
         run: docker build --tag austria-smart-grid:ci .
@@ -73,4 +100,3 @@ jobs:
 
           echo "Streamlit did not become healthy within 60 seconds."
           exit 1
-          PY
