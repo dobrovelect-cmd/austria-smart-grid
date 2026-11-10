@@ -52,7 +52,7 @@ Der Container verwendet den im Repository gespeicherten CSV-Datensatz `substatio
 
 Das Dashboard verwendet einen versionierten CSV-Snapshot mit Netzkapazitäten von EbUtilities und Klimakennwerten von Open-Meteo für das Jahr 2024. Beim Öffnen der App werden keine externen APIs aufgerufen. Die Kapazitätswerte bleiben während der Demonstration unverändert; dadurch ist das Verhalten reproduzierbar und unabhängig von der aktuellen Verfügbarkeit der API.
 
-Der Snapshot kann durch den Maintainer separat über den GitHub-Actions-Workflow „Refresh network and climate dataset“ neu erzeugt werden. Nach Veröffentlichung eines neuen Snapshots wird die Anwendung aus dem aktualisierten Repository-Stand neu gestartet.
+Der Snapshot kann durch den Maintainer separat über den GitHub-Actions-Workflow „Refresh network and climate dataset“ neu erzeugt werden. Der Workflow ist derzeit ausschließlich manuell startbar; ein täglicher, wöchentlicher oder monatlicher Zeitplan ist nicht eingerichtet. Nach erfolgreichem Lauf werden CSV und Metadaten auf den ausgewählten Branch committet. Bei einer Bereitstellung aus `main` übernimmt Streamlit Community Cloud den neuen Repository-Stand anschließend beim nächsten App-Deployment.
 
 ### Technisches Anlagenregister
 
@@ -88,6 +88,8 @@ Die Klimakennwerte beziehen sich auf das Kalenderjahr 2024 und werden über die 
 - `Solar_kWh`: jährliche Summe der stündlichen Mittelwerte von `shortwave_radiation`, geteilt durch 1000. Die resultierende Einheit ist **kWh/m²** (globale kurzwellige Einstrahlung auf eine horizontale Fläche), nicht die elektrische PV-Erzeugung.
 - Der PV-Vollbenutzungsstunden-Proxy in der App wird als `Solar_kWh / 1 kW/m² × 0,85` berechnet. Der Faktor 0,85 ist ein vereinfachter Performance-Ratio-Ansatz; die Rechnung ist kein PV-Ertragsmodell für eine konkrete Modulfläche, Neigung oder Anlagenkonfiguration.
 - Die Kategorien und BESS-Leistungswerte sind heuristische Screening-Ausgaben. Die App führt weder Lastfluss- noch Dispatch- oder Kostenoptimierung durch.
+- Netzknoten ohne ausgewiesene freie Einspeisekapazität (`Frei_MVA ≤ 0`) werden nicht als Anschlusskandidaten gezählt. Die Kandidatenzahlen beziehen sich nur auf die aktuell gefilterten Netzknoten mit positiver freier Kapazität.
+- Die Wind-Gewichtung ist ein frei definierter Screening-Score und keine physikalische Energiekennzahl. Sie wird zusammen mit dem PV-Äquivalentstunden-Proxy ausschließlich zur heuristischen Aufteilung der verfügbaren Anschlusskapazität verwendet.
 - Die Wetterwerte stammen aus räumlichen Reanalyse-/Modellgitterzellen und sind keine standortspezifischen Messungen oder Ertragsprognosen.
 - Bei unvollständigen oder fehlerhaft formatierten Open-Meteo-JSON-Antworten wird der betreffende Standort-Batch erneut abgefragt und bei Bedarf rekursiv in kleinere Teil-Batches zerlegt. Der CSV-Snapshot wird erst nach erfolgreicher Verarbeitung aller gültigen Netzknoten ersetzt.
 
