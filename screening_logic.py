@@ -15,6 +15,21 @@ REFERENCE_IRRADIANCE_KW_PER_M2 = 1.0
 LOW_POTENTIAL_COLOR = [189, 195, 199, 100]
 NO_CAPACITY_COLOR = [150, 150, 150, 160]
 
+CANDIDATE_STRATEGIES = (
+    "Windpark + BESS (heuristisch)",
+    "PV-Anlage + BESS (heuristisch)",
+    "Hybrides Wind-PV-System + BESS (heuristisch)",
+)
+
+
+def count_candidate_strategies(strategies: Any) -> dict[str, int]:
+    """Count only the three connection-candidate classes; empty input is valid."""
+    counts = {strategy: 0 for strategy in CANDIDATE_STRATEGIES}
+    for strategy in strategies:
+        if strategy in counts:
+            counts[strategy] += 1
+    return counts
+
 
 def _as_finite_float(value: Any, field_name: str) -> float:
     try:
