@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import time
 from datetime import datetime
@@ -37,10 +38,16 @@ session.mount("https://", HTTPAdapter(max_retries=retry_policy))
 
 
 def parse_float(value, default=None):
-    """Parse Austrian decimal notation and reject missing coordinate values."""
+    """Parse Austrian decimal notation and reject non-finite numeric values."""
     if value is None or str(value).strip() == "":
         return default
-    return float(str(value).strip().replace(",", "."))
+    try:
+        number = float(str(value).strip().replace(",", "."))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid numeric value: {value!r}") from exc
+    if not math.isfinite(number):
+        raise ValueError(f"Non-finite numeric value: {value!r}")
+    return number
 
 
 def prepare_station(item, index):
@@ -50,9 +57,23 @@ def prepare_station(item, index):
     if latitude is None or longitude is None or latitude == 0 or longitude == 0:
         return None
 
+    uid = item.get("uid")
+    if uid is None or str(uid).strip() == "":
+        uid = item.get("powerstationId")
+    if uid is None or str(uid).strip() == "":
+        raise ValueError(
+            f"EbUtilities station at index {index} has no stable station UID."
+        )
+
+    if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
+        raise ValueError(
+            f"Invalid coordinates for station {item.get('substationName', index)}: "
+            f"{latitude}, {longitude}"
+        )
+
     return {
-        # EbUtilities now exposes the station identifier as "uid".
-        "UID": item.get("uid", item.get("powerstationId", index)),
+        # Preserve the API UID in the versioned source snapshot.
+        "UID": uid,
         "Name": item.get("substationName", "Unbekannt"),
         "Frei_MVA": parse_float(item.get("availableCapacity"), 0.0),
         "Belegt_MVA": parse_float(item.get("bookedCapacity"), 0.0),
@@ -263,11 +284,23 @@ def main():
         raise RuntimeError(
             f"Datensatz unvollständig: {len(df)} von {len(stations)} Knoten."
         )
-    if df["UID"].duplicated().any():
-        duplicated = df.loc[df["UID"].duplicated(), "UID"].tolist()
+    if df["UID"].isna().any():
+        raise RuntimeError("Final dataset contains missing station UIDs.")
+    if df["UID"].astype(str).duplicated().any():
+        duplicated = df.loc[df["UID"].astype(str).duplicated(), "UID"].tolist()
         raise RuntimeError(f"Doppelte Netzknoten-IDs gefunden: {duplicated[:10]}")
     if df[["Wind_ms", "Solar_kWh", "Frei_MVA", "Belegt_MVA"]].isna().any().any():
         raise RuntimeError("Final dataset contains missing numeric values.")
+    numeric_columns = [
+        "Frei_MVA", "Belegt_MVA", "Breite", "Länge", "Wind_ms", "Solar_kWh"
+    ]
+    numeric_values = df[numeric_columns].to_numpy(dtype=float)
+    if not all(math.isfinite(float(value)) for value in numeric_values.ravel()):
+        raise RuntimeError("Final dataset contains non-finite numeric values.")
+    if (df[["Frei_MVA", "Belegt_MVA"]] < 0).any().any():
+        raise RuntimeError("Grid capacity values cannot be negative.")
+    if not df["Breite"].between(-90, 90).all() or not df["Länge"].between(-180, 180).all():
+        raise RuntimeError("Final dataset contains invalid geographic coordinates.")
     if not df["Wind_ms"].between(0, 100).all():
         raise RuntimeError("Wind_ms contains implausible values outside 0–100 m/s.")
     if not df["Solar_kWh"].between(0, 3000).all():
