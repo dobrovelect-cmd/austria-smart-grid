@@ -10,8 +10,8 @@ import streamlit as st
 st.set_page_config(page_title="Pre-Screening österreichischer Umspannwerke", layout="wide")
 
 # Screening-Proxies (keine standortspezifische Ertragssimulation).
-PV_PERFORMANCE_RATIO = 0.85
-REFERENCE_IRRADIANCE_KW_PER_M2 = 1.0
+from screening_logic import calculate_heuristic_mix
+
 
 APP_DIR = Path(__file__).resolve().parent
 BASE_CSV_FILE = APP_DIR / "substations_climate_base.csv"
@@ -169,81 +169,41 @@ f_df = df[
     (df["Frei_MVA"].between(range_mva[0], range_mva[1]))
 ].copy()
 
-def calculate_heuristic_mix(row):
-    S = row['Frei_MVA']
-    
-    if not use_climate_analysis:
-        return row['Farbe_Netz'], "Basis-Netzmodus", 0.0, 0.0, 0.0, 0
-    
-    # 1. Vereinfachte Ressourcenindikatoren
-    # Wind is checked against the selected threshold using the annual modelled mean
-    # at 100 m. The resulting dimensionless score is only a heuristic allocation
-    # weight; it is NOT wind full-load hours or an energy-yield estimate.
-    if pd.isna(row['Wind_ms']) or row['Wind_ms'] < target_wind:
-        wind_weight_score = 0.0
-    else:
-        wind_weight_score = min(
-            3200.0,
-            1000.0 + (row['Wind_ms'] - target_wind) * 500.0
-        )
-        
-    # GHI [kWh/m²] / reference irradiance [kW/m²] × PR [-] gives a PV
-    # equivalent-full-load-hours proxy [h/a], not a site-specific yield simulation.
-    vbs_solar = (row['Solar_kWh'] / REFERENCE_IRRADIANCE_KW_PER_M2) * PV_PERFORMANCE_RATIO
-    
-    wind_ok = wind_weight_score > 0
-    solar_ok = row['Solar_kWh'] >= target_solar
-    
-    if not wind_ok and not solar_ok:
-        return [189, 195, 199, 100], "Geringes Potenzial", 0.0, 0.0, 0.0, int(vbs_solar)
-        
-    # 2. Gewichte bestimmen
-    total_resource_score = (wind_weight_score if wind_ok else 0) + (vbs_solar if solar_ok else 0)
-    w_wind = (wind_weight_score / total_resource_score) if wind_ok else 0.0
-    w_solar = (vbs_solar / total_resource_score) if solar_ok else 0.0
-    
-    # Heuristischer BESS-Leistungsanteil; nicht optimiert oder simuliert
-    if wind_ok and solar_ok:
-        speicher_anteil = 0.20 
-        strategie_name = "Hybrides Wind-PV-System + BESS (heuristisch)"
-        farbe = [155, 89, 182, 210] # Lila
-    elif wind_ok:
-        speicher_anteil = 0.25 
-        strategie_name = "Windpark + BESS (heuristisch)"
-        farbe = [41, 128, 185, 210] # Blau
-    else:
-        speicher_anteil = 0.35 # Höherer Speicherbedarf für die Mittagssonne
-        strategie_name = "PV-Anlage + BESS (heuristisch)"
-        farbe = [241, 196, 15, 210] # Gelb
-        
-    # --- HEURISTISCHER CO-LOCATION-/BESS-ANSATZ ---
-    # S wird als verfügbare Einspeisekapazität verwendet. Die Überbauung des
-    # Netzanschlusses ist eine Szenarioannahme und wurde nicht simuliert.
-    leistung_speicher = round(S * speicher_anteil, 1)
-    
-    # Heuristische Überbauung des Netzanschlusses als Screening-Annahme
-    leistung_wea = round(S * w_wind * (1 + speicher_anteil), 1)
-    leistung_pv = round(S * w_solar * (1 + speicher_anteil), 1)
-    
-    return farbe, strategie_name, leistung_wea, leistung_pv, leistung_speicher, int(vbs_solar)
 
 if not f_df.empty:
-    res = f_df.apply(calculate_heuristic_mix, axis=1)
-    f_df['Finale_Farbe'] = [r[0] for r in res]
-    f_df['Strategie'] = [r[1] for r in res]
-    f_df['WEA_Leistung_MVA'] = [r[2] for r in res]
-    f_df['PV_Leistung_MVA'] = [r[3] for r in res]
-    f_df['Speicher_MVA'] = [r[4] for r in res]
-    f_df['VBS_Solar_h'] = [r[5] for r in res]
+    res = f_df.apply(
+        lambda row: calculate_heuristic_mix(
+            row,
+            target_wind=target_wind,
+            target_solar=target_solar,
+            use_climate_analysis=use_climate_analysis,
+        ),
+        axis=1,
+    )
+    f_df["Finale_Farbe"] = [item[0] for item in res]
+    f_df["Strategie"] = [item[1] for item in res]
+    f_df["WEA_Leistung_MVA"] = [item[2] for item in res]
+    f_df["PV_Leistung_MVA"] = [item[3] for item in res]
+    f_df["Speicher_MVA"] = [item[4] for item in res]
+    f_df["VBS_Solar_h"] = [item[5] for item in res]
+else:
+    # Preserve the schema even when filters remove every row. This keeps the
+    # metrics, empty map layer, and table renderable without a KeyError.
+    f_df["Finale_Farbe"] = pd.Series(index=f_df.index, dtype="object")
+    f_df["Strategie"] = pd.Series(index=f_df.index, dtype="object")
+    f_df["WEA_Leistung_MVA"] = pd.Series(index=f_df.index, dtype="float64")
+    f_df["PV_Leistung_MVA"] = pd.Series(index=f_df.index, dtype="float64")
+    f_df["Speicher_MVA"] = pd.Series(index=f_df.index, dtype="float64")
+    f_df["VBS_Solar_h"] = pd.Series(index=f_df.index, dtype="float64")
 
-    if use_climate_analysis:
-        def get_wind_screening_status(speed):
-            if pd.isna(speed):
-                return "Keine Klimadaten"
-            return "Schwelle erfüllt" if speed >= target_wind else "Unterhalb der Schwelle"
+if use_climate_analysis:
+    def get_wind_screening_status(speed):
+        if pd.isna(speed):
+            return "Keine Klimadaten"
+        return "Schwelle erfüllt" if speed >= target_wind else "Unterhalb der Schwelle"
 
-        f_df["Wind_Screening_Status"] = f_df["Wind_ms"].apply(get_wind_screening_status)
-        f_df["Wind_Schwelle_ms"] = target_wind
+    f_df["Wind_Screening_Status"] = f_df["Wind_ms"].apply(get_wind_screening_status)
+    f_df["Wind_Schwelle_ms"] = target_wind
 
 
 # =====================================================================
@@ -256,7 +216,11 @@ if not use_climate_analysis:
     col2.metric("Max. freie Kapazität", f"{f_df['Frei_MVA'].max()} MVA" if not f_df.empty else "0 MVA")
     col3.metric("Durchschn. freie Kapazität", f"{round(f_df['Frei_MVA'].mean(), 1)} MVA" if not f_df.empty else "0 MVA")
 else:
-    counts = f_df['Strategie'].value_counts()
+    counts = (
+        f_df["Strategie"].value_counts()
+        if "Strategie" in f_df.columns
+        else pd.Series(dtype="int64")
+    )
 
     # Colored square markers match the corresponding ColumnLayer colors.
     candidate_metrics = [
@@ -266,6 +230,11 @@ else:
     ]
     for metric_col, label, count in candidate_metrics:
         metric_col.metric(label=label, value=count)
+    no_capacity_count = int((f_df["Frei_MVA"] <= 0).sum())
+    st.caption(
+        f"{no_capacity_count} gefilterte Netzknoten ohne ausgewiesene freie Anschlusskapazität "
+        "werden nicht als Anschlusskandidaten gezählt."
+    )
 
 # =====================================================================
 # 🎯 TOOLTIP FÜR SCREENING-INDIKATOREN
